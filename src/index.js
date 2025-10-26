@@ -113,9 +113,45 @@ button{background:#16a34a;color:#fff;cursor:pointer;border:none}
 
 <div class="card">
   <h2>Load Users</h2>
-  <button onclick="fetch('/admin/users',{headers:{'Authorization':'Bearer '+window.token}}).then(r=>r.json()).then(d=>document.getElementById('result3').textContent=JSON.stringify(d,null,2))">Load Users</button>
+  <button onclick="fetch('/admin/users',{headers:{'Authorization':'Bearer '+window.token}}).then(r=>r.json()).then(d=>{document.getElementById('result3').textContent=JSON.stringify(d,null,2);window.users=d.data||[]})">Load Users</button>
   <div id="result3" class="result"></div>
 </div>
+
+<div class="card">
+  <h2>User Management</h2>
+  <h3>Add New User</h3>
+  <select id="lineIdSelect" style="width:100%">
+    <option value="">Select LINE User ID</option>
+    <option value="Ue358aad024251165657dfcb85c8755fe">Boss LINE ID</option>
+    <option value="U1234567890abcdef1234567890abcdef">Secretary 1</option>
+    <option value="U9876543210fedcba9876543210fedcba">Secretary 2</option>
+    <option value="Uabcdef1234567890abcdef1234567890">Test User</option>
+  </select>
+  <input id="newName" placeholder="Name (optional)" style="width:100%"/>
+  <button onclick="fetch('/admin/boss/set',{method:'POST',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('lineIdSelect').value})}).then(r=>r.json()).then(d=>document.getElementById('result4').textContent=JSON.stringify(d,null,2))">Set as Boss</button>
+  <button onclick="fetch('/admin/secretary/add',{method:'POST',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('lineIdSelect').value,name:document.getElementById('newName').value||'Secretary'})}).then(r=>r.json()).then(d=>document.getElementById('result4').textContent=JSON.stringify(d,null,2))">Add Secretary</button>
+  <div id="result4" class="result"></div>
+  
+  <h3>Delete User</h3>
+  <select id="userSelect" style="width:100%"><option value="">Select user to delete</option></select>
+  <button onclick="if(document.getElementById('userSelect').value&&confirm('Delete user?'))fetch('/admin/user/delete',{method:'DELETE',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({userId:document.getElementById('userSelect').value})}).then(r=>r.json()).then(d=>document.getElementById('result5').textContent=JSON.stringify(d,null,2))">Delete User</button>
+  <div id="result5" class="result"></div>
+</div>
+
+<script>
+window.users=[];
+setInterval(()=>{
+  const select=document.getElementById('userSelect');
+  if(window.users.length>0&&select.children.length<=1){
+    window.users.forEach(u=>{
+      const opt=document.createElement('option');
+      opt.value=u.id;
+      opt.textContent=u.name+' ('+u.role+') - '+(u.line_user_id||'No LINE');
+      select.appendChild(opt);
+    });
+  }
+},1000);
+</script>
 
 </body></html>`;
         return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
