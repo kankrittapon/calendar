@@ -671,18 +671,28 @@ function getToken(){
 }
 
 async function testSendToBoss(){
+  console.log('testSendToBoss called');
   const lineUserId = document.getElementById('lineUserId').value;
   const message = document.getElementById('message').value;
   const format = document.getElementById('messageFormat').value;
   
-  const res = await fetch('/test/send-to-boss', {
-    method: 'POST',
-    headers: {'content-type': 'application/json'},
-    body: JSON.stringify({ lineUserId, message, format })
-  });
+  console.log('Sending request:', { lineUserId, message, format });
   
-  const result = await res.json().catch(() => ({}));
-  document.getElementById('sendResult').textContent = JSON.stringify(result, null, 2);
+  try {
+    const res = await fetch('/test/send-to-boss', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ lineUserId, message, format })
+    });
+    
+    console.log('Response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Response data:', result);
+    document.getElementById('sendResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error('Request failed:', error);
+    document.getElementById('sendResult').textContent = 'Error: ' + error.message;
+  }
 }
 
 async function testCron(){
@@ -700,16 +710,26 @@ async function testCron(){
 }
 
 async function testCronNoAuth(){
+  console.log('testCronNoAuth called');
   const format = document.getElementById('cronFormat').value;
   
-  const res = await fetch('/test/cron', {
-    method: 'POST',
-    headers: {'content-type': 'application/json'},
-    body: JSON.stringify({ format })
-  });
+  console.log('Testing cron with format:', format);
   
-  const result = await res.json().catch(() => ({}));
-  document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+  try {
+    const res = await fetch('/test/cron', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ format })
+    });
+    
+    console.log('Cron response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Cron response data:', result);
+    document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error('Cron test failed:', error);
+    document.getElementById('cronResult').textContent = 'Error: ' + error.message;
+  }
 }
 
 async function setBoss(){
@@ -786,38 +806,48 @@ async function testSendToSecretaries(){
 let allUsers = [];
 
 async function loadAllUsers(){
+  console.log('loadAllUsers called');
   const token = getToken();
   if(!token) return;
   
-  const res = await fetch('/admin/users', {
-    headers: {'authorization': 'Bearer ' + token}
-  });
+  console.log('Loading users with token:', token.substring(0, 10) + '...');
   
-  const result = await res.json().catch(() => ({}));
-  
-  if(res.ok && result.data) {
-    allUsers = result.data;
-    
-    const usersList = result.data.map(user => {
-      const roleText = user.role === 'boss' ? 'หัวหน้า' : 'เลขา';
-      const lineId = user.line_user_id || '-';
-      return user.name + ' (' + roleText + ') - LINE: ' + lineId;
-    }).join('\n');
-    
-    document.getElementById('usersList').textContent = usersList || 'ไม่มีผู้ใช้';
-    
-    const userSelect = document.getElementById('userSelect');
-    userSelect.innerHTML = '<option value="">-- เลือกผู้ใช้ --</option>';
-    result.data.forEach(user => {
-      const option = document.createElement('option');
-      option.value = user.id;
-      option.textContent = user.name + ' (' + (user.role === 'boss' ? 'หัวหน้า' : 'เลขา') + ')';
-      userSelect.appendChild(option);
+  try {
+    const res = await fetch('/admin/users', {
+      headers: {'authorization': 'Bearer ' + token}
     });
     
-    document.getElementById('roleManagement').style.display = 'block';
-  } else {
-    document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
+    console.log('Users response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Users response data:', result);
+    
+    if(res.ok && result.data) {
+      allUsers = result.data;
+      
+      const usersList = result.data.map(user => {
+        const roleText = user.role === 'boss' ? 'หัวหน้า' : 'เลขา';
+        const lineId = user.line_user_id || '-';
+        return user.name + ' (' + roleText + ') - LINE: ' + lineId;
+      }).join('\n');
+      
+      document.getElementById('usersList').textContent = usersList || 'ไม่มีผู้ใช้';
+      
+      const userSelect = document.getElementById('userSelect');
+      userSelect.innerHTML = '<option value="">-- เลือกผู้ใช้ --</option>';
+      result.data.forEach(user => {
+        const option = document.createElement('option');
+        option.value = user.id;
+        option.textContent = user.name + ' (' + (user.role === 'boss' ? 'หัวหน้า' : 'เลขา') + ')';
+        userSelect.appendChild(option);
+      });
+      
+      document.getElementById('roleManagement').style.display = 'block';
+    } else {
+      document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
+    }
+  } catch (error) {
+    console.error('Load users failed:', error);
+    document.getElementById('usersList').textContent = 'Error: ' + error.message;
   }
 }
 
