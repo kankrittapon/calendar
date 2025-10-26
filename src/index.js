@@ -206,6 +206,17 @@ export default {
         console.log("Cron test completed");
         return json({ ok: true, ran: "sendDailyAgendaToBoss", format: fmt, force });
       }
+      
+      // ทดสอบ Cron ทันที (ไม่ต้อง auth)
+      if (pathname === "/test/cron" && method === "POST") {
+        console.log("Test cron called (no auth)");
+        const body = await safeJson(request);
+        const fmt = body.format || "flex";
+        console.log(`Running test cron with format: ${fmt}`);
+        await sendDailyAgendaToBoss(env, { format: fmt, force: true });
+        console.log("Test cron completed");
+        return json({ ok: true, ran: "sendDailyAgendaToBoss", format: fmt, force: true });
+      }
 
       // ทดสอบส่งข้อมูลให้ boss (ไม่ต้อง auth)
       if (pathname === "/test/send-to-boss" && method === "POST") {
@@ -518,9 +529,19 @@ body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
 input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
 button{background:#16a34a;color:#fff;cursor:pointer}
 .result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap}
+.global-token{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
 </style></head>
 <body>
 <h1>ทดสอบระบบ Schedule Worker</h1>
+
+<div class="global-token">
+  <h2>🔑 ตั้งค่า Token สำหรับทุกฟีเจอร์</h2>
+  <label>SEED_ADMIN_TOKEN:<br>
+    <input id="globalToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:300px"/>
+  </label>
+  <button onclick="setGlobalToken()">ตั้งค่า Token</button>
+  <div id="tokenStatus" style="margin-top:8px;font-size:14px"></div>
+</div>
 
 <div class="card">
   <h2>ทดสอบส่งข้อความให้ Boss</h2>
@@ -548,18 +569,15 @@ button{background:#16a34a;color:#fff;cursor:pointer}
       <option value="flex">Flex Message</option>
     </select>
   </label>
-  <label>SEED_ADMIN_TOKEN:<br>
-    <input id="seedToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:100%"/>
-  </label>
-  <button onclick="testCron()">ทดสอบ Cron</button>
+  <div style="margin:8px 0">
+    <button onclick="testCron()">ทดสอบ Cron (ต้อง Auth)</button>
+    <button onclick="testCronNoAuth()" style="background:#f59e0b;margin-left:8px">ทดสอบ Cron (ไม่ต้อง Auth)</button>
+  </div>
   <div id="cronResult" class="result"></div>
 </div>
 
 <div class="card">
   <h2>จัดการผู้ใช้</h2>
-  <label>SEED_ADMIN_TOKEN:<br>
-    <input id="adminToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:100%"/>
-  </label>
   
   <h3>ตั้ง User เป็น Boss</h3>
   <label>LINE User ID ของ Boss:<br>
@@ -586,9 +604,6 @@ button{background:#16a34a;color:#fff;cursor:pointer}
 
 <div class="card">
   <h2>จัดการ Role ผู้ใช้</h2>
-  <label>SEED_ADMIN_TOKEN:<br>
-    <input id="roleAdminToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:100%"/>
-  </label>
   
   <div style="margin:12px 0">
     <button onclick="loadAllUsers()">โหลดรายชื่อผู้ใช้ทั้งหมด</button>
@@ -631,6 +646,30 @@ button{background:#16a34a;color:#fff;cursor:pointer}
 </div>
 
 <script>
+let GLOBAL_TOKEN = '';
+
+async function setGlobalToken(){
+  GLOBAL_TOKEN = document.getElementById('globalToken').value;
+  if(GLOBAL_TOKEN) {
+    document.getElementById('tokenStatus').innerHTML = '✅ Token ตั้งค่าแล้ว';
+    document.getElementById('tokenStatus').style.color = '#10b981';
+    
+    // โหลด users อัตโนมัติ
+    await loadAllUsers();
+  } else {
+    document.getElementById('tokenStatus').innerHTML = '❌ กรุณาใส่ Token';
+    document.getElementById('tokenStatus').style.color = '#ef4444';
+  }
+}
+
+function getToken(){
+  if(!GLOBAL_TOKEN) {
+    alert('กรุณาตั้งค่า SEED_ADMIN_TOKEN ก่อน');
+    return null;
+  }
+  return GLOBAL_TOKEN;
+}
+
 async function testSendToBoss(){
   const lineUserId = document.getElementById('lineUserId').value;
   const message = document.getElementById('message').value;
@@ -648,13 +687,25 @@ async function testSendToBoss(){
 
 async function testCron(){
   const format = document.getElementById('cronFormat').value;
-  const seedToken = document.getElementById('seedToken').value;
-  
-  if(!seedToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
+  const token = getToken();
+  if(!token) return;
   
   const res = await fetch('/admin/cron/test?format=' + format + '&force=true', {
     method: 'POST',
-    headers: {'authorization': 'Bearer ' + seedToken}
+    headers: {'authorization': 'Bearer ' + token}
+  });
+  
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+}
+
+async function testCronNoAuth(){
+  const format = document.getElementById('cronFormat').value;
+  
+  const res = await fetch('/test/cron', {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({ format })
   });
   
   const result = await res.json().catch(() => ({}));
@@ -662,16 +713,16 @@ async function testCron(){
 }
 
 async function setBoss(){
-  const adminToken = document.getElementById('adminToken').value;
+  const token = getToken();
+  if(!token) return;
   const lineUserId = document.getElementById('bossUserId').value;
   
-  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
   if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
   
   const res = await fetch('/admin/boss/set', {
     method: 'POST',
     headers: {
-      'authorization': 'Bearer ' + adminToken,
+      'authorization': 'Bearer ' + token,
       'content-type': 'application/json'
     },
     body: JSON.stringify({ lineUserId })
@@ -682,17 +733,17 @@ async function setBoss(){
 }
 
 async function addSecretary(){
-  const adminToken = document.getElementById('adminToken').value;
+  const token = getToken();
+  if(!token) return;
   const lineUserId = document.getElementById('secretaryUserId').value;
   const name = document.getElementById('secretaryName').value;
   
-  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
   if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
   
   const res = await fetch('/admin/secretary/add', {
     method: 'POST',
     headers: {
-      'authorization': 'Bearer ' + adminToken,
+      'authorization': 'Bearer ' + token,
       'content-type': 'application/json'
     },
     body: JSON.stringify({ lineUserId, name })
@@ -708,12 +759,11 @@ async function addSecretary(){
 }
 
 async function listSecretaries(){
-  const adminToken = document.getElementById('adminToken').value;
-  
-  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
+  const token = getToken();
+  if(!token) return;
   
   const res = await fetch('/admin/secretaries', {
-    headers: {'authorization': 'Bearer ' + adminToken}
+    headers: {'authorization': 'Bearer ' + token}
   });
   
   const result = await res.json().catch(() => ({}));
@@ -736,12 +786,11 @@ async function testSendToSecretaries(){
 let allUsers = [];
 
 async function loadAllUsers(){
-  const adminToken = document.getElementById('roleAdminToken').value;
-  
-  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
+  const token = getToken();
+  if(!token) return;
   
   const res = await fetch('/admin/users', {
-    headers: {'authorization': 'Bearer ' + adminToken}
+    headers: {'authorization': 'Bearer ' + token}
   });
   
   const result = await res.json().catch(() => ({}));
@@ -773,17 +822,17 @@ async function loadAllUsers(){
 }
 
 async function updateUserRole(){
-  const adminToken = document.getElementById('roleAdminToken').value;
+  const token = getToken();
+  if(!token) return;
   const userId = document.getElementById('userSelect').value;
   const role = document.getElementById('roleSelect').value;
   
-  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
   if(!userId) return alert('กรุณาเลือกผู้ใช้');
   
   const res = await fetch('/admin/user/role', {
     method: 'PATCH',
     headers: {
-      'authorization': 'Bearer ' + adminToken,
+      'authorization': 'Bearer ' + token,
       'content-type': 'application/json'
     },
     body: JSON.stringify({ userId, role })
@@ -798,10 +847,10 @@ async function updateUserRole(){
 }
 
 async function deleteUser(){
-  const adminToken = document.getElementById('roleAdminToken').value;
+  const token = getToken();
+  if(!token) return;
   const userId = document.getElementById('userSelect').value;
   
-  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
   if(!userId) return alert('กรุณาเลือกผู้ใช้');
   
   const selectedUser = allUsers.find(u => u.id === userId);
@@ -810,7 +859,7 @@ async function deleteUser(){
   const res = await fetch('/admin/user/delete', {
     method: 'DELETE',
     headers: {
-      'authorization': 'Bearer ' + adminToken,
+      'authorization': 'Bearer ' + token,
       'content-type': 'application/json'
     },
     body: JSON.stringify({ userId })
@@ -1304,9 +1353,19 @@ async function handleAdminSeedFull(request, env) {
 }
 
 async function assertAdminSeedAuth(env, authHeader) {
-  if (!authHeader) throw new Error("missing Authorization header");
+  console.log("[assertAdminSeedAuth] Checking auth...");
+  if (!authHeader) {
+    console.log("[assertAdminSeedAuth] Missing Authorization header");
+    throw new Error("missing Authorization header");
+  }
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (token !== env.SEED_ADMIN_TOKEN) throw new Error("invalid SEED_ADMIN_TOKEN");
+  console.log(`[assertAdminSeedAuth] Received token: ${token.substring(0, 10)}...`);
+  console.log(`[assertAdminSeedAuth] Expected token: ${env.SEED_ADMIN_TOKEN?.substring(0, 10)}...`);
+  if (token !== env.SEED_ADMIN_TOKEN) {
+    console.log("[assertAdminSeedAuth] Token mismatch!");
+    throw new Error("invalid SEED_ADMIN_TOKEN");
+  }
+  console.log("[assertAdminSeedAuth] Auth successful");
 }
 
 async function seedUsersAndTargets(env) {
