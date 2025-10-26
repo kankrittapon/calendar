@@ -25,10 +25,10 @@ export default {
       if (pathname === "/schedules" && method === "POST") {
         const body = await safeJson(request);
         const created = await createSchedule(env, body);
-        
+
         // ส่งแจ้งเตือนให้ boss เมื่อเพิ่มงานใหม่
         await notifyBossNewSchedule(env, created.id);
-        
+
         return json({ ok: true, data: created }, 201);
       }
 
@@ -84,9 +84,13 @@ export default {
 <style>
 body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
 .card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
-input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+input,textarea,button,select{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
 button{background:#16a34a;color:#fff;cursor:pointer;border:none}
 .result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap;font-family:monospace}
+.user-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:8px;margin-top:8px}
+.user-item{background:#1f2937;padding:8px;border-radius:6px;border-left:4px solid #3b82f6}
+.user-item.boss{border-left-color:#ef4444}
+.user-item.secretary{border-left-color:#10b981}
 </style></head>
 <body>
 <h1>Test Console</h1>
@@ -113,12 +117,21 @@ button{background:#16a34a;color:#fff;cursor:pointer;border:none}
 
 <div class="card">
   <h2>Load Users</h2>
-  <button onclick="fetch('/admin/users',{headers:{'Authorization':'Bearer '+window.token}}).then(r=>r.json()).then(d=>{document.getElementById('result3').textContent=JSON.stringify(d,null,2);window.users=d.data||[]})">Load Users</button>
-  <div id="result3" class="result"></div>
+  <button onclick="loadUsers()">Load Users</button>
+  <div id="userGrid" class="user-grid"></div>
 </div>
 
 <div class="card">
   <h2>User Management</h2>
+  <h3>Manage User</h3>
+  <select id="userManageSelect" style="width:100%"><option value="">Select existing user</option></select>
+  <select id="roleSelect" style="width:100%">
+    <option value="boss">Set as Boss</option>
+    <option value="secretary">Set as Secretary</option>
+  </select>
+  <button onclick="manageUser()">Update Role</button>
+  <div id="result4" class="result"></div>
+
   <h3>Add New User</h3>
   <select id="lineIdSelect" style="width:100%">
     <option value="">Select LINE User ID</option>
@@ -128,29 +141,82 @@ button{background:#16a34a;color:#fff;cursor:pointer;border:none}
     <option value="Uabcdef1234567890abcdef1234567890">Test User</option>
   </select>
   <input id="newName" placeholder="Name (optional)" style="width:100%"/>
-  <button onclick="fetch('/admin/boss/set',{method:'POST',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('lineIdSelect').value})}).then(r=>r.json()).then(d=>document.getElementById('result4').textContent=JSON.stringify(d,null,2))">Set as Boss</button>
-  <button onclick="fetch('/admin/secretary/add',{method:'POST',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('lineIdSelect').value,name:document.getElementById('newName').value||'Secretary'})}).then(r=>r.json()).then(d=>document.getElementById('result4').textContent=JSON.stringify(d,null,2))">Add Secretary</button>
-  <div id="result4" class="result"></div>
-  
+  <select id="newRoleSelect" style="width:100%">
+    <option value="boss">Add as Boss</option>
+    <option value="secretary">Add as Secretary</option>
+  </select>
+  <button onclick="addNewUser()">Add User</button>
+  <div id="addResult" class="result"></div>
+
   <h3>Delete User</h3>
   <select id="userSelect" style="width:100%"><option value="">Select user to delete</option></select>
-  <button onclick="if(document.getElementById('userSelect').value&&confirm('Delete user?'))fetch('/admin/user/delete',{method:'DELETE',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({userId:document.getElementById('userSelect').value})}).then(r=>r.json()).then(d=>document.getElementById('result5').textContent=JSON.stringify(d,null,2))">Delete User</button>
+  <button onclick="deleteUser()">Delete User</button>
+  <button onclick="loadUsers()" style="background:#f59e0b;margin-left:8px">Reload</button>
   <div id="result5" class="result"></div>
 </div>
 
 <script>
 window.users=[];
-setInterval(()=>{
-  const select=document.getElementById('userSelect');
-  if(window.users.length>0&&select.children.length<=1){
+
+function loadUsers(){
+  fetch('/admin/users',{headers:{'Authorization':'Bearer '+window.token}})
+  .then(r=>r.json())
+  .then(d=>{
+    document.getElementById('result3').textContent=JSON.stringify(d,null,2);
+    window.users=d.data||[];
+    updateUserGrid();
+    updateUserSelects();
+  });
+}
+
+function updateUserGrid(){
+  const grid=document.getElementById('userGrid');
+  grid.innerHTML=window.users.map(u=>
+    `<div class="user-item ${u.role}">
+      <strong>${u.name}</strong> (${u.role})<br>
+      <small>${u.line_user_id||'No LINE ID'}</small>
+    </div>`
+  ).join('');
+}
+
+function updateUserSelects(){
+  ['userSelect','userManageSelect'].forEach(id=>{
+    const select=document.getElementById(id);
+    select.innerHTML='<option value="">Select user</option>';
     window.users.forEach(u=>{
       const opt=document.createElement('option');
       opt.value=u.id;
-      opt.textContent=u.name+' ('+u.role+') - '+(u.line_user_id||'No LINE');
+      opt.textContent=u.name+' ('+u.role+') - ID: '+u.id.substring(0,8)+'...';
       select.appendChild(opt);
     });
-  }
-},1000);
+  });
+}
+
+function manageUser(){
+  const userId=document.getElementById('userManageSelect').value;
+  const role=document.getElementById('roleSelect').value;
+  if(!userId)return alert('Select user');
+  fetch('/admin/user/role',{method:'PATCH',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({userId,role})})
+  .then(r=>r.json()).then(d=>{document.getElementById('result4').textContent=JSON.stringify(d,null,2);loadUsers();});
+}
+
+function addNewUser(){
+  const lineUserId=document.getElementById('lineIdSelect').value;
+  const name=document.getElementById('newName').value||'User';
+  const role=document.getElementById('newRoleSelect').value;
+  if(!lineUserId)return alert('Select LINE ID');
+  const endpoint=role==='boss'?'/admin/boss/set':'/admin/secretary/add';
+  const body=role==='boss'?{lineUserId}:{lineUserId,name};
+  fetch(endpoint,{method:'POST',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify(body)})
+  .then(r=>r.json()).then(d=>{document.getElementById('result4').textContent=JSON.stringify(d,null,2);loadUsers();});
+}
+
+function deleteUser(){
+  const userId=document.getElementById('userSelect').value;
+  if(!userId||!confirm('Delete user?'))return;
+  fetch('/admin/user/delete',{method:'DELETE',headers:{'Authorization':'Bearer '+window.token,'content-type':'application/json'},body:JSON.stringify({userId})})
+  .then(r=>r.json()).then(d=>{document.getElementById('result5').textContent=JSON.stringify(d,null,2);loadUsers();});
+}
 </script>
 
 </body></html>`;
@@ -185,31 +251,31 @@ setInterval(()=>{
       if (pathname === "/admin/seed/full" && method === "POST") {
         return handleAdminSeedFull(request, env);
       }
-      
+
       // ตั้ง User เป็น Boss
       if (pathname === "/admin/boss/set" && method === "POST") {
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
         const body = await safeJson(request);
         const { lineUserId } = body;
         if (!lineUserId) return json({ ok: false, error: "lineUserId required" }, 400);
-        
+
         await setBossUser(env, lineUserId);
         return json({ ok: true, message: "User set as boss successfully" });
       }
-      
+
       // เพิ่มเลขาใหม่
       if (pathname === "/admin/secretary/add" && method === "POST") {
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
         const body = await safeJson(request);
         const { lineUserId, name } = body;
         if (!lineUserId) return json({ ok: false, error: "lineUserId required" }, 400);
-        
+
         const id = await addSecretary(env, lineUserId, name);
         return json({ ok: true, secretaryId: id });
       }
-      
 
-      
+
+
       // ดูรายชื่อเลขา
       if (pathname === "/admin/secretaries" && method === "GET") {
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
@@ -218,7 +284,7 @@ setInterval(()=>{
           .all();
         return json({ ok: true, data: secretaries.results || [] });
       }
-      
+
       // ดูรายชื่อ users ทั้งหมด
       if (pathname === "/admin/users" && method === "GET") {
         console.log("Admin users list called");
@@ -229,7 +295,7 @@ setInterval(()=>{
         console.log(`Found ${users.results?.length || 0} users`);
         return json({ ok: true, data: users.results || [] });
       }
-      
+
       // อัพเดท role ของ user
       if (pathname === "/admin/user/role" && method === "PATCH") {
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
@@ -237,39 +303,39 @@ setInterval(()=>{
         const { userId, role } = body;
         if (!userId || !role) return json({ ok: false, error: "userId and role required" }, 400);
         if (!['boss', 'secretary'].includes(role)) return json({ ok: false, error: "role must be boss or secretary" }, 400);
-        
+
         const now = new Date().toISOString();
         const result = await env.schedule_db
           .prepare("UPDATE users SET role = ?, updated_at = ? WHERE id = ?")
           .bind(role, now, userId)
           .run();
-          
+
         if (result.meta.changes === 0) {
           return json({ ok: false, error: "User not found" }, 404);
         }
-        
+
         return json({ ok: true, message: "Role updated successfully" });
       }
-      
+
       // ลบ user
       if (pathname === "/admin/user/delete" && method === "DELETE") {
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
         const body = await safeJson(request);
         const { userId } = body;
         if (!userId) return json({ ok: false, error: "userId required" }, 400);
-        
+
         const result = await env.schedule_db
           .prepare("DELETE FROM users WHERE id = ?")
           .bind(userId)
           .run();
-          
+
         if (result.meta.changes === 0) {
           return json({ ok: false, error: "User not found" }, 404);
         }
-        
+
         return json({ ok: true, message: "User deleted successfully" });
       }
-      
+
 
 
       // Manual cron trigger (ทดสอบสรุปทันที: ?format=text|flex&force=true)
@@ -283,7 +349,7 @@ setInterval(()=>{
         console.log("Cron test completed");
         return json({ ok: true, ran: "sendDailyAgendaToBoss", format: fmt, force });
       }
-      
+
       // ทดสอบ Cron ทันที (ไม่ต้อง auth)
       if (pathname === "/test/cron" && method === "POST") {
         console.log("Test cron called (no auth)");
@@ -304,7 +370,7 @@ setInterval(()=>{
         const lineUserId = body.lineUserId || "U1234567890abcdef1234567890abcdef";
         const format = body.format || "text";
         console.log(`Sending ${format} message to ${lineUserId}:`, message);
-        
+
         if (env.LINE_CHANNEL_ACCESS_TOKEN) {
           if (format === "flex") {
             const today = new Date().toISOString().slice(0,10);
@@ -324,7 +390,7 @@ setInterval(()=>{
           return json({ ok: false, error: "LINE_CHANNEL_ACCESS_TOKEN not configured" });
         }
       }
-      
+
       // ทดสอบส่งข้อความให้เลขา
       if (pathname === "/test/send-to-secretaries" && method === "POST") {
         console.log("Test send-to-secretaries called");
@@ -332,7 +398,7 @@ setInterval(()=>{
         console.log("Request body:", body);
         const message = body.message || "ทดสอบข้อความจากหัวหน้า";
         console.log("Message to send:", message);
-        
+
         if (env.LINE_CHANNEL_ACCESS_TOKEN) {
           const sentCount = await sendMessageToAllSecretaries(env, message);
           return json({ ok: true, sent: message, secretaryCount: sentCount });
@@ -340,7 +406,7 @@ setInterval(()=>{
           return json({ ok: false, error: "LINE_CHANNEL_ACCESS_TOKEN not configured" });
         }
       }
-      
+
 
 
       /* ======= LINE webhook ======= */
@@ -356,7 +422,7 @@ setInterval(()=>{
             await handleFollow(env, ev);
             continue;
           }
-          
+
           if (ev.type === "message" && ev.message?.type === "text") {
             const msg = normalize(ev.message.text);
 
@@ -364,13 +430,13 @@ setInterval(()=>{
             if (msg === "ตารางงาน" || msg === "งานวันนี้" || msg === "ดูตารางงานวันนี้") {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-              
+
               const today = new Date().toISOString().slice(0,10);
               const schedules = await env.schedule_db
                 .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status
                           FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
                 .bind(today).all();
-              
+
               const items = schedules?.results || [];
               if (items.length === 0) {
                 await replyText(env, ev.replyToken, "วันนี้ไม่มีงาน");
@@ -380,21 +446,21 @@ setInterval(()=>{
               }
               continue;
             }
-            
+
             // ตารางงานพรุ่งนี้
             if (msg === "ดูตารางงานพรุ่งนี้" || msg === "งานพรุ่งนี้") {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-              
+
               const tomorrow = new Date();
               tomorrow.setDate(tomorrow.getDate() + 1);
               const tomorrowStr = tomorrow.toISOString().slice(0,10);
-              
+
               const schedules = await env.schedule_db
                 .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status
                           FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
                 .bind(tomorrowStr).all();
-              
+
               const items = schedules?.results || [];
               if (items.length === 0) {
                 await replyText(env, ev.replyToken, "พรุ่งนี้ไม่มีงาน");
@@ -404,32 +470,32 @@ setInterval(()=>{
               }
               continue;
             }
-            
+
             // ส่งข้อความให้เลขา
             if (msg === "ส่งข้อความให้เลขา") {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-              
+
               await replyText(env, ev.replyToken, "กรุณาพิมพ์ข้อความที่ต้องการส่งให้เลขา\nตัวอย่าง: ข้อความ:กรุณาเตรียมเอกสารประชุม");
               continue;
             }
-            
+
             // ส่งข้อความไปเลขา
             if (msg.startsWith("ข้อความ:")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-              
+
               const message = msg.replace("ข้อความ:", "").trim();
               if (!message) {
                 await replyText(env, ev.replyToken, "กรุณาระบุข้อความ เช่น: ข้อความ:กรุณาเตรียมเอกสารประชุม");
                 continue;
               }
-              
+
               const sentCount = await sendMessageToAllSecretaries(env, message);
               await replyText(env, ev.replyToken, `✅ ส่งข้อความไปเลขา ${sentCount} คน\n\n"${message}"`);
               continue;
             }
-            
+
             // ถ้าเป็น boss และพิมพ์ข้อความธรรมดา ให้ส่งไปเลขาทุกคน
             const role = await getUserRoleByLineId(env, ev.source?.userId);
             if (role === "boss" && msg && !msg.startsWith("งานด่วน:") && !msg.startsWith("เพิ่มงาน") && !msg.startsWith("ดูตารางงาน") && !msg.startsWith("ส่งข้อความ")) {
@@ -437,24 +503,24 @@ setInterval(()=>{
               await replyText(env, ev.replyToken, `ส่งข้อความไปเลขา ${sentCount} คน`);
               continue;
             }
-            
+
             // Quick Work
             if (msg.startsWith("งานด่วน:")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-              
+
               const task = msg.replace("งานด่วน:", "").trim();
               if (!task) {
                 await replyText(env, ev.replyToken, "กรุณาระบุงาน เช่น: งานด่วน:เตรียมเอกสารประชุม");
                 continue;
               }
-              
+
               // ส่งแจ้งเตือนไปเลขา (ใช้ LINE หรือ notification system)
               await notifySecretaryUrgentTask(env, task);
               await replyText(env, ev.replyToken, `✅ ส่งงานด่วนแล้ว: ${task}`);
               continue;
             }
-            
+
             // เพิ่มงานผ่านข้อความ (Boss และ Secretary)
             if (msg.startsWith("เพิ่มงาน")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
@@ -462,49 +528,49 @@ setInterval(()=>{
                 await replyText(env, ev.replyToken, "เฉพาะหัวหน้าและเลขาเท่านั้น");
                 continue;
               }
-              
+
               if (msg === "เพิ่มงาน") {
-                await replyText(env, ev.replyToken, 
+                await replyText(env, ev.replyToken,
                   "📝 วิธีเพิ่มงาน:\n\n" +
                   "🔸 งานเดียว:\nเพิ่มงาน:ประชุม,2025-01-15,14:00,ห้องประชุม\n\n" +
                   "🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม,2025-01-15,14:00,ห้องประชุม|อบรม,2025-01-16,09:00,ห้องอบรม");
                 continue;
               }
-              
+
               // แยกงานหลายงาน (ใช้ | เป็นตัวแยก)
               const taskList = msg.replace(/^เพิ่มงาน[:：]/, "").split("|");
               const results = [];
-              
+
               for (const taskStr of taskList) {
                 const parts = taskStr.split(",").map(s => s?.trim());
                 const [title, date, start_time, location] = parts;
-                
+
                 if (!title || !date || !start_time) {
                   results.push(`❌ ${title || 'งานไม่ระบุชื่อ'}: รูปแบบไม่ถูกต้อง`);
                   continue;
                 }
-                
+
                 try {
                   let category_id = "00000000-0000-0000-0000-000000000001"; // default งานในหน่วย
                   const extraTok = parts[4]?.trim();
                   const mapped = mapCategoryTokenToId(extraTok) ||
                     mapCategoryTokenToId((location||"").split(/\s+/).find(x => x?.startsWith?.("#")));
                   if (mapped) category_id = mapped;
-                  
+
                   await createSchedule(env, {
                     title, date, start_time,
                     location, place: location, category_id,
-                    assignees: "auto", 
+                    assignees: "auto",
                     notes: role === "boss" ? "เพิ่มจาก LINE โดยหัวหน้า" : "เพิ่มจาก LINE โดยเลขา"
                   });
-                  
+
                   results.push(`✅ ${title}: ${date} ${start_time}`);
                 } catch (err) {
                   console.error("เพิ่มงาน error:", err);
                   results.push(`❌ ${title}: เพิ่มไม่สำเร็จ`);
                 }
               }
-              
+
               const summary = `📋 สรุปการเพิ่มงาน (${taskList.length} งาน):\n\n${results.join('\n')}`;
               await replyText(env, ev.replyToken, summary);
               continue;
@@ -516,35 +582,35 @@ setInterval(()=>{
             const action = params.action;
             const scheduleId = params.id;
             const lineUserId = ev.source?.userId;
-            
+
             if (action === "toggle_attend" && scheduleId && lineUserId) {
               const role = await getUserRoleByLineId(env, lineUserId);
               if (role !== "boss") continue;
-              
+
               // เช็คสถานะปัจจุบันจาก database
               const currentSchedule = await env.schedule_db
                 .prepare("SELECT attend_status FROM schedules WHERE id = ?")
                 .bind(scheduleId)
                 .first();
-              
+
               const currentStatus = currentSchedule?.attend_status;
               let newStatus;
-              
+
               if (currentStatus === "yes") {
                 newStatus = "no";
               } else {
                 newStatus = "yes";
               }
-              
+
               await setAttendStatus(env, scheduleId, newStatus);
-              
+
               // แสดง log ที่ถูกต้อง
               const statusText = newStatus === "yes" ? "ไป" : "ไม่ไป";
               const icon = newStatus === "yes" ? "✅" : "❌";
-              
+
               await replyText(env, ev.replyToken, `${icon} เปลี่ยนจาก: ${statusText}`);
             }
-            
+
             // Legacy support
             if ((action === "attend_yes" || action === "attend_no") && scheduleId && lineUserId) {
               const role = await getUserRoleByLineId(env, lineUserId);
@@ -569,14 +635,14 @@ setInterval(()=>{
     console.log("[CRON] Scheduled function triggered at:", new Date().toISOString());
     try {
       const format = (env.AGENDA_FORMAT || "flex").toLowerCase();
-      
+
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
       const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
       const hour = bangkok.getHours();
-      
+
       console.log(`[CRON] Bangkok time: ${bangkok.toISOString()}, Hour: ${hour}`);
-      
+
       if (hour === 8) {
         console.log("[CRON] Sending today's agenda");
         await sendDailyAgendaToBoss(env, { format, type: 'today' });
@@ -712,23 +778,23 @@ async function sendTestMessage() {
   const format = document.getElementById('messageFormat').value;
   const message = document.getElementById('messageContent').value.trim();
   const resultDiv = document.getElementById('sendResult');
-  
+
   if (!lineUserId || !message) {
     resultDiv.textContent = 'Please fill in all fields';
     resultDiv.className = 'result error';
     return;
   }
-  
+
   try {
     resultDiv.textContent = 'Sending...';
     resultDiv.className = 'result';
-    
+
     const response = await fetch('/test/send-to-boss', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lineUserId, message, format })
     });
-    
+
     const result = await response.json();
     resultDiv.textContent = JSON.stringify(result, null, 2);
     resultDiv.className = response.ok ? 'result success' : 'result error';
@@ -741,17 +807,17 @@ async function sendTestMessage() {
 async function testCron() {
   const format = document.getElementById('cronFormat').value;
   const resultDiv = document.getElementById('cronResult');
-  
+
   try {
     resultDiv.textContent = 'Running cron test...';
     resultDiv.className = 'result';
-    
+
     const response = await fetch('/test/cron', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ format })
     });
-    
+
     const result = await response.json();
     resultDiv.textContent = JSON.stringify(result, null, 2);
     resultDiv.className = response.ok ? 'result success' : 'result error';
@@ -764,23 +830,23 @@ async function testCron() {
 async function loadUsers() {
   const headers = getAuthHeaders();
   if (!headers) return;
-  
+
   const resultDiv = document.getElementById('usersResult');
-  
+
   try {
     resultDiv.textContent = 'Loading users...';
     resultDiv.className = 'result';
-    
+
     const response = await fetch('/admin/users', { headers });
     const result = await response.json();
-    
+
     if (response.ok && result.data) {
       const usersList = result.data.map(user => {
         const role = user.role === 'boss' ? 'Boss' : 'Secretary';
         const lineId = user.line_user_id || 'No LINE ID';
         return user.name + ' (' + role + ') - ' + lineId;
       }).join('\n');
-      
+
       resultDiv.textContent = usersList || 'No users found';
       resultDiv.className = 'result success';
     } else {
@@ -886,14 +952,14 @@ async function testSendToBoss(){
   const lineUserId = document.getElementById('lineUserId').value;
   const message = document.getElementById('message').value;
   const format = document.getElementById('messageFormat').value;
-  
+
   try {
     const res = await fetch('/test/send-to-boss', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({ lineUserId, message, format })
     });
-    
+
     const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
     document.getElementById('sendResult').textContent = JSON.stringify(result, null, 2);
   } catch (error) {
@@ -904,14 +970,14 @@ async function testSendToBoss(){
 async function testCronNoAuth(){
   console.log('testCronNoAuth called');
   const format = document.getElementById('cronFormat').value;
-  
+
   try {
     const res = await fetch('/test/cron', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({ format })
     });
-    
+
     const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
     document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
   } catch (error) {
@@ -923,13 +989,13 @@ async function testCron(){
   const token = getToken();
   if(!token) return;
   const format = document.getElementById('cronFormat').value;
-  
+
   try {
     const res = await fetch('/admin/cron/test?format=' + format + '&force=true', {
       method: 'POST',
       headers: {'authorization': 'Bearer ' + token}
     });
-    
+
     const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
     document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
   } catch (error) {
@@ -941,21 +1007,21 @@ async function loadAllUsers(){
   console.log('loadAllUsers called');
   const token = getToken();
   if(!token) return;
-  
+
   try {
     const res = await fetch('/admin/users', {
       headers: {'authorization': 'Bearer ' + token}
     });
-    
+
     const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
-    
+
     if(res.ok && result.data) {
       const usersList = result.data.map(user => {
         const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
         const lineId = user.line_user_id || '-';
         return user.name + ' (' + roleText + ') - LINE: ' + lineId;
       }).join('\n');
-      
+
       document.getElementById('usersList').textContent = usersList || 'No users found';
     } else {
       document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
@@ -967,14 +1033,14 @@ async function loadAllUsers(){
 
 async function testSendToSecretaries(){
   const message = document.getElementById('secretaryMessage').value;
-  
+
   try {
     const res = await fetch('/test/send-to-secretaries', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({ message })
     });
-    
+
     const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
     document.getElementById('secretaryMsgResult').textContent = JSON.stringify(result, null, 2);
   } catch (error) {
@@ -1045,14 +1111,14 @@ button{background:#16a34a;color:#fff;cursor:pointer}
 
 <div class="card">
   <h2>จัดการผู้ใช้</h2>
-  
+
   <h3>ตั้ง User เป็น Boss</h3>
   <label>LINE User ID ของ Boss:<br>
     <input id="bossUserId" value="Ue358aad024251165657dfcb85c8755fe" style="width:100%"/>
   </label>
   <button onclick="setBoss()">ตั้งเป็น Boss</button>
   <div id="bossResult" class="result"></div>
-  
+
   <h3>เพิ่มเลขาใหม่</h3>
   <label>LINE User ID ของเลขา:<br>
     <input id="secretaryUserId" placeholder="U1234567890abcdef1234567890abcdef" style="width:100%"/>
@@ -1062,7 +1128,7 @@ button{background:#16a34a;color:#fff;cursor:pointer}
   </label>
   <button onclick="addSecretary()">เพิ่มเลขา</button>
   <div id="secretaryResult" class="result"></div>
-  
+
   <div style="margin:12px 0">
     <button onclick="listSecretaries()">ดูรายชื่อเลขา</button>
     <div id="secretaryList" class="result"></div>
@@ -1071,12 +1137,12 @@ button{background:#16a34a;color:#fff;cursor:pointer}
 
 <div class="card">
   <h2>จัดการ Role ผู้ใช้</h2>
-  
+
   <div style="margin:12px 0">
     <button onclick="loadAllUsers()">โหลดรายชื่อผู้ใช้ทั้งหมด</button>
     <div id="usersList" class="result"></div>
   </div>
-  
+
   <div id="roleManagement" style="display:none;margin-top:16px">
     <h3>เปลี่ยน Role</h3>
     <label>เลือกผู้ใช้:<br>
@@ -1120,7 +1186,7 @@ async function setGlobalToken(){
   if(GLOBAL_TOKEN) {
     document.getElementById('tokenStatus').innerHTML = '✅ Token ตั้งค่าแล้ว';
     document.getElementById('tokenStatus').style.color = '#10b981';
-    
+
     // โหลด users อัตโนมัติ
     await loadAllUsers();
   } else {
@@ -1142,16 +1208,16 @@ async function testSendToBoss(){
   const lineUserId = document.getElementById('lineUserId').value;
   const message = document.getElementById('message').value;
   const format = document.getElementById('messageFormat').value;
-  
+
   console.log('Sending request:', { lineUserId, message, format });
-  
+
   try {
     const res = await fetch('/test/send-to-boss', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({ lineUserId, message, format })
     });
-    
+
     console.log('Response status:', res.status);
     const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
     console.log('Response data:', result);
@@ -1166,12 +1232,12 @@ async function testCron(){
   const format = document.getElementById('cronFormat').value;
   const token = getToken();
   if(!token) return;
-  
+
   const res = await fetch('/admin/cron/test?format=' + format + '&force=true', {
     method: 'POST',
     headers: {'authorization': 'Bearer ' + token}
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
 }
@@ -1179,16 +1245,16 @@ async function testCron(){
 async function testCronNoAuth(){
   console.log('testCronNoAuth called');
   const format = document.getElementById('cronFormat').value;
-  
+
   console.log('Testing cron with format:', format);
-  
+
   try {
     const res = await fetch('/test/cron', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({ format })
     });
-    
+
     console.log('Cron response status:', res.status);
     const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
     console.log('Cron response data:', result);
@@ -1203,9 +1269,9 @@ async function setBoss(){
   const token = getToken();
   if(!token) return;
   const lineUserId = document.getElementById('bossUserId').value;
-  
+
   if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
-  
+
   const res = await fetch('/admin/boss/set', {
     method: 'POST',
     headers: {
@@ -1214,7 +1280,7 @@ async function setBoss(){
     },
     body: JSON.stringify({ lineUserId })
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('bossResult').textContent = JSON.stringify(result, null, 2);
 }
@@ -1224,9 +1290,9 @@ async function addSecretary(){
   if(!token) return;
   const lineUserId = document.getElementById('secretaryUserId').value;
   const name = document.getElementById('secretaryName').value;
-  
+
   if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
-  
+
   const res = await fetch('/admin/secretary/add', {
     method: 'POST',
     headers: {
@@ -1235,10 +1301,10 @@ async function addSecretary(){
     },
     body: JSON.stringify({ lineUserId, name })
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('secretaryResult').textContent = JSON.stringify(result, null, 2);
-  
+
   if(res.ok) {
     document.getElementById('secretaryUserId').value = '';
     document.getElementById('secretaryName').value = '';
@@ -1248,24 +1314,24 @@ async function addSecretary(){
 async function listSecretaries(){
   const token = getToken();
   if(!token) return;
-  
+
   const res = await fetch('/admin/secretaries', {
     headers: {'authorization': 'Bearer ' + token}
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('secretaryList').textContent = JSON.stringify(result, null, 2);
 }
 
 async function testSendToSecretaries(){
   const message = document.getElementById('secretaryMessage').value;
-  
+
   const res = await fetch('/test/send-to-secretaries', {
     method: 'POST',
     headers: {'content-type': 'application/json'},
     body: JSON.stringify({ message })
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('secretaryMsgResult').textContent = JSON.stringify(result, null, 2);
 }
@@ -1276,29 +1342,29 @@ async function loadAllUsers(){
   console.log('loadAllUsers called');
   const token = getToken();
   if(!token) return;
-  
+
   console.log('Loading users with token:', token.substring(0, 10) + '...');
-  
+
   try {
     const res = await fetch('/admin/users', {
       headers: {'authorization': 'Bearer ' + token}
     });
-    
+
     console.log('Users response status:', res.status);
     const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
     console.log('Users response data:', result);
-    
+
     if(res.ok && result.data) {
       allUsers = result.data;
-      
+
       const usersList = result.data.map(user => {
         const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
         const lineId = user.line_user_id || '-';
         return user.name + ' (' + roleText + ') - LINE: ' + lineId;
       }).join('\n');
-      
+
       document.getElementById('usersList').textContent = usersList || 'No users found';
-      
+
       const userSelect = document.getElementById('userSelect');
       userSelect.innerHTML = '<option value="">-- Select User --</option>';
       result.data.forEach(user => {
@@ -1307,7 +1373,7 @@ async function loadAllUsers(){
         option.textContent = user.name + ' (' + (user.role === 'boss' ? 'Boss' : 'Secretary') + ')';
         userSelect.appendChild(option);
       });
-      
+
       document.getElementById('roleManagement').style.display = 'block';
     } else {
       document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
@@ -1323,9 +1389,9 @@ async function updateUserRole(){
   if(!token) return;
   const userId = document.getElementById('userSelect').value;
   const role = document.getElementById('roleSelect').value;
-  
+
   if(!userId) return alert('กรุณาเลือกผู้ใช้');
-  
+
   const res = await fetch('/admin/user/role', {
     method: 'PATCH',
     headers: {
@@ -1334,10 +1400,10 @@ async function updateUserRole(){
     },
     body: JSON.stringify({ userId, role })
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
-  
+
   if(res.ok) {
     loadAllUsers();
   }
@@ -1347,12 +1413,12 @@ async function deleteUser(){
   const token = getToken();
   if(!token) return;
   const userId = document.getElementById('userSelect').value;
-  
+
   if(!userId) return alert('กรุณาเลือกผู้ใช้');
-  
+
   const selectedUser = allUsers.find(u => u.id === userId);
   if(!confirm('ต้องการลบผู้ใช้ "' + (selectedUser?.name || 'Unknown') + '" หรือไม่?')) return;
-  
+
   const res = await fetch('/admin/user/delete', {
     method: 'DELETE',
     headers: {
@@ -1361,10 +1427,10 @@ async function deleteUser(){
     },
     body: JSON.stringify({ userId })
   });
-  
+
   const result = await res.json().catch(() => ({}));
   document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
-  
+
   if(res.ok) {
     document.getElementById('userSelect').selectedIndex = 0;
     loadAllUsers();
@@ -1443,7 +1509,7 @@ async function fetchRange(start,end){
 
 function groupByDay(items){
   const m = {};
-  for(const s of items){ 
+  for(const s of items){
     if(!m[s.date]) m[s.date] = [];
     m[s.date].push(s);
   }
@@ -1486,21 +1552,21 @@ async function render(){
       const by = groupByDay(list);
       viewEl.className='month';
       let html='<div class="month">';
-      
+
       const daysInMonth = last.getDate();
       const firstDayOfWeek = first.getDay();
       const startDay = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
-      
+
       let dayCount = 1;
       const weeks = Math.ceil((daysInMonth + startDay) / 7);
-      
+
       const dayHeaders = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
       html += '<div class="row" style="background:#1e293b;border-radius:8px 8px 0 0">';
       dayHeaders.forEach(dayName => {
         html += '<div style="padding:8px;text-align:center;font-weight:bold;color:#cbd5e1;font-size:14px">'+dayName+'</div>';
       });
       html += '</div>';
-      
+
       for(let week = 0; week < weeks; week++){
         html+='<div class="row">';
         for(let day = 0; day < 7; day++){
@@ -1601,9 +1667,9 @@ async function addTask(date){
   const end = document.getElementById('newEnd').value;
   const place = document.getElementById('newPlace').value.trim();
   const category = document.getElementById('newCategory').value;
-  
+
   if(!title || !start) return alert('กรุณากรอกชื่อและเวลาเริ่ม');
-  
+
   const res = await fetch('/schedules', {
     method: 'POST',
     headers: {'content-type': 'application/json'},
@@ -1612,7 +1678,7 @@ async function addTask(date){
       category_id: category
     })
   });
-  
+
   if(res.ok){
     document.getElementById('newTitle').value = '';
     document.getElementById('newStart').selectedIndex = 0;
@@ -1645,11 +1711,11 @@ document.addEventListener('DOMContentLoaded', function(){
  * ========================= */
 async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type = "today" } = {}) {
   console.log(`[sendDailyAgendaToBoss] Starting with format: ${format}, force: ${force}, type: ${type}`);
-  
+
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
   const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
-  
+
   let targetDate, dateForQuery;
   if (type === "tomorrow") {
     const tomorrow = new Date(bangkok);
@@ -1660,9 +1726,9 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
     targetDate = bangkok;
     dateForQuery = `${bangkok.getFullYear()}-${String(bangkok.getMonth()+1).padStart(2,"0")}-${String(bangkok.getDate()).padStart(2,"0")}`;
   }
-  
+
   console.log(`[sendDailyAgendaToBoss] Target date: ${dateForQuery}`);
-  
+
   const dayOfWeek = targetDate.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
   console.log(`[sendDailyAgendaToBoss] Day of week: ${dayOfWeek}, Is weekend: ${isWeekend}`);
@@ -1686,12 +1752,12 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
 
   const items = schedules?.results || [];
   console.log(`[sendDailyAgendaToBoss] Found ${items.length} schedules for ${dateForQuery}`);
-  
+
   if (isWeekend && items.length === 0) {
     console.log(`[cron] Skip weekend notification - no tasks on ${dateForQuery}`);
     return;
   }
-  
+
   const dayText = type === "tomorrow" ? "พรุ่งนี้" : "วันนี้";
   const asText = items.length
     ? buildAgendaText(dateForQuery, items, dayText)
@@ -1707,14 +1773,14 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
         .prepare("SELECT 1 FROM notifications_sent WHERE type=? AND target=? AND date(sent_at) = date('now','localtime') LIMIT 1")
         .bind(notificationType, target)
         .first();
-      if (already) { 
-        console.log(`[cron] skip duplicate ${notificationType}`, target); 
-        continue; 
+      if (already) {
+        console.log(`[cron] skip duplicate ${notificationType}`, target);
+        continue;
       }
     }
 
     console.log(`[sendDailyAgendaToBoss] Sending ${format} message to ${target}`);
-    
+
     if (format === "flex" && items.length) {
       const bubble = buildAgendaFlex(dateForQuery, items, dayText);
       await pushLineFlex(env, target, bubble);
@@ -1734,7 +1800,7 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
       console.log(`[sendDailyAgendaToBoss] Recorded notification for ${target}`);
     }
   }
-  
+
   console.log(`[sendDailyAgendaToBoss] Completed sending to ${bosses.results.length} bosses`);
 }
 
@@ -1754,28 +1820,28 @@ function buildAgendaText(dateStr, items, dayText = "วันนี้") {
 function buildAgendaFlex(dateStr, items, dayText = "วันนี้") {
   const date = new Date(dateStr);
   const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
-  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 
+  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
                      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-  
+
   const dayName = thaiDays[date.getDay()];
   const day = date.getDate();
   const month = thaiMonths[date.getMonth()];
   const year = date.getFullYear() + 543;
-  
+
   const thaiDateStr = `${dayName} วันที่ ${day} ${month} ${year}`;
-  
+
   const categoryColors = {
     '00000000-0000-0000-0000-000000000001': '#3b82f6',
     '00000000-0000-0000-0000-000000000002': '#10b981',
     '00000000-0000-0000-0000-000000000003': '#f59e0b',
     '00000000-0000-0000-0000-000000000004': '#ef4444'
   };
-  
+
   const rows = items.map((s,i) => {
     const time = s.start_time;
     const att = s.attend_status === "yes" ? "✅" : (s.attend_status === "no" ? "❌" : "⏳");
     const color = categoryColors[s.category_id] || '#6b7280';
-    
+
     return {
       type: "box", layout: "horizontal", spacing: "sm", margin: "xs",
       paddingAll: "8px", backgroundColor: "#1f2937", cornerRadius: "6px",
@@ -1877,7 +1943,7 @@ async function seedUsersAndTargets(env) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    
+
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
@@ -1886,7 +1952,7 @@ async function seedUsersAndTargets(env) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    
+
     CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -1904,7 +1970,7 @@ async function seedUsersAndTargets(env) {
       updated_at TEXT NOT NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id)
     );
-    
+
     CREATE TABLE IF NOT EXISTS notifications_sent (
       id TEXT PRIMARY KEY,
       schedule_id TEXT,
@@ -1913,32 +1979,32 @@ async function seedUsersAndTargets(env) {
       sent_at TEXT NOT NULL
     );
   `);
-  
+
   // Insert default data
   const now = new Date().toISOString();
-  
+
   // Categories
   await env.schedule_db.prepare(`
     INSERT OR IGNORE INTO categories (id, code, label, color, created_at, updated_at)
-    VALUES 
+    VALUES
       ('00000000-0000-0000-0000-000000000001', 'internal', 'งานในหน่วย', '#3b82f6', ?, ?),
       ('00000000-0000-0000-0000-000000000002', 'department', 'งานในกรม', '#10b981', ?, ?),
       ('00000000-0000-0000-0000-000000000003', 'big', 'งานใหญ่', '#f59e0b', ?, ?),
       ('00000000-0000-0000-0000-000000000004', 'external', 'งานนอก', '#ef4444', ?, ?)
   `).bind(now, now, now, now, now, now, now, now).run();
-  
+
   // Default users
   const secretaryKey = env.SECRETARY_API_KEY || '794311';
-  
+
   // Update existing secretary API key
   await env.schedule_db.prepare(`
     UPDATE users SET api_key = ?, updated_at = ? WHERE role = 'secretary'
   `).bind(secretaryKey, now).run();
-  
+
   // Insert if not exists
   await env.schedule_db.prepare(`
     INSERT OR IGNORE INTO users (id, name, role, api_key, line_user_id, created_at, updated_at)
-    VALUES 
+    VALUES
       ('00000000-0000-0000-0000-000000000001', 'เลขานุการ', 'secretary', ?, NULL, ?, ?),
       ('00000000-0000-0000-0000-000000000002', 'หัวหน้า', 'boss', NULL, NULL, ?, ?)
   `).bind(secretaryKey, now, now, now, now).run();
@@ -1968,13 +2034,13 @@ async function getUserRoleByLineId(env, lineUserId) {
 // ===== ตั้ง User เป็น Boss =====
 async function setBossUser(env, lineUserId) {
   const now = new Date().toISOString();
-  
+
   // อัพเดท user ที่มีอยู่ให้เป็น boss
   const result = await env.schedule_db
     .prepare("UPDATE users SET role = 'boss', updated_at = ? WHERE line_user_id = ?")
     .bind(now, lineUserId)
     .run();
-    
+
   if (result.meta.changes === 0) {
     // ถ้าไม่มี user ให้สร้างใหม่
     const id = crypto.randomUUID();
@@ -1983,7 +2049,7 @@ async function setBossUser(env, lineUserId) {
       .bind(id, "หัวหน้า", lineUserId, now, now)
       .run();
   }
-  
+
   return true;
 }
 
@@ -1992,10 +2058,10 @@ async function sendMessageToAllSecretaries(env, message, fromBoss = true) {
   const secretaries = await env.schedule_db
     .prepare("SELECT line_user_id FROM users WHERE role = 'secretary' AND line_user_id IS NOT NULL")
     .all();
-  
+
   const prefix = fromBoss ? "ข้อความจากหัวหน้า:\n\n" : "";
   const fullMessage = prefix + message;
-  
+
   for (const secretary of secretaries.results) {
     try {
       await pushLineText(env, secretary.line_user_id, fullMessage);
@@ -2003,7 +2069,7 @@ async function sendMessageToAllSecretaries(env, message, fromBoss = true) {
       console.error(`Failed to send message to secretary ${secretary.line_user_id}:`, error);
     }
   }
-  
+
   return secretaries.results.length;
 }
 
@@ -2011,12 +2077,12 @@ async function sendMessageToAllSecretaries(env, message, fromBoss = true) {
 async function addSecretary(env, lineUserId, name = "เลขานุการ") {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  
+
   await env.schedule_db
     .prepare("INSERT INTO users (id, name, role, line_user_id, created_at, updated_at) VALUES (?, ?, 'secretary', ?, ?, ?)")
     .bind(id, name, lineUserId, now, now)
     .run();
-    
+
   return id;
 }
 
@@ -2025,9 +2091,9 @@ async function addSecretary(env, lineUserId, name = "เลขานุการ
 // ===== จัดการเมื่อมีคนติดตาม =====
 async function handleFollow(env, event) {
   const userId = event.source.userId;
-  
+
   // ส่งข้อความต้อนรับ
-  await pushLineText(env, userId, 
+  await pushLineText(env, userId,
     "ยินดีต้อนรับสู่ระบบตารางงาน! 🎉\n\n" +
     "กรุณาแจ้งให้ผู้ดูแลระบบเพิ่ม User ID ของคุณเข้าสู่ระบบ\n\n" +
     "User ID: " + userId
@@ -2104,16 +2170,16 @@ async function notifyBossNewSchedule(env, scheduleId) {
   const schedule = await env.schedule_db
     .prepare("SELECT * FROM schedules WHERE id = ?")
     .bind(scheduleId).first();
-  
+
   if (!schedule) return;
-  
+
   const bosses = await env.schedule_db
     .prepare("SELECT line_user_id FROM users WHERE role='boss' AND line_user_id IS NOT NULL")
     .all();
-  
+
   const time = schedule.end_time ? `${schedule.start_time}–${schedule.end_time}` : schedule.start_time;
   const message = `🔔 งานใหม่\n📅 ${schedule.date}\n⏰ ${time}\n📝 ${schedule.title}\n📍 ${schedule.place || '-'}`;
-  
+
   for (const boss of bosses.results || []) {
     await pushLineText(env, boss.line_user_id, message);
   }
@@ -2129,34 +2195,34 @@ function buildScheduleFlexWithActions(dateStr, items) {
   // แปลงวันที่เป็นรูปแบบไทย
   const date = new Date(dateStr);
   const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
-  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 
+  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
                      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-  
+
   const dayName = thaiDays[date.getDay()];
   const day = date.getDate();
   const month = thaiMonths[date.getMonth()];
   const year = date.getFullYear() + 543;
-  
+
   const thaiDateStr = `${dayName} วันที่ ${day} ${month} ${year}`;
-  
+
   const categoryColors = {
     '00000000-0000-0000-0000-000000000001': '#3b82f6',
     '00000000-0000-0000-0000-000000000002': '#10b981',
     '00000000-0000-0000-0000-000000000003': '#f59e0b',
     '00000000-0000-0000-0000-000000000004': '#ef4444'
   };
-  
+
   const rows = items.map((s,i) => {
     const time = s.end_time ? `${s.start_time}–${s.end_time}` : s.start_time;
     const color = categoryColors[s.category_id] || '#6b7280';
     const statusIcon = s.status === 'completed' ? '✅' : s.status === 'cancelled' ? '❌' : '⏳';
     const attendIcon = s.attend_status === 'yes' ? '✅' : s.attend_status === 'no' ? '❌' : '❓';
-    
+
     return {
       type: "box", layout: "horizontal", spacing: "sm", margin: "xs",
       paddingAll: "8px", backgroundColor: "#1f2937", cornerRadius: "6px",
       contents: [
-        { 
+        {
           type: "box", layout: "vertical", flex: 0, width: "4px", height: "100%",
           backgroundColor: color, cornerRadius: "2px"
         },
@@ -2187,7 +2253,7 @@ function buildScheduleFlexWithActions(dateStr, items) {
       ]
     };
   });
-  
+
   return {
     type: "bubble",
     size: "giga",
@@ -2229,21 +2295,21 @@ async function replyFlexForCreate(env, replyToken) {
 }
 async function pushLineText(env, lineUserId, text) {
   console.log(`[pushLineText] Sending to ${lineUserId}:`, text.substring(0, 100) + '...');
-  
+
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
     console.error("[pushLineText] LINE_CHANNEL_ACCESS_TOKEN not configured");
     return;
   }
-  
+
   const url = "https://api.line.me/v2/bot/message/push";
   const headers = { "content-type": "application/json", "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` };
   const body = { to: lineUserId, messages: [{ type: "text", text }] };
-  
+
   try {
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-    if (!res.ok) { 
-      const msg = await res.text().catch(() => res.statusText); 
-      console.error("[pushLineText] LINE push error:", res.status, msg); 
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.statusText);
+      console.error("[pushLineText] LINE push error:", res.status, msg);
     } else {
       console.log(`[pushLineText] Successfully sent to ${lineUserId}`);
     }
@@ -2253,21 +2319,21 @@ async function pushLineText(env, lineUserId, text) {
 }
 async function pushLineFlex(env, lineUserId, bubble) {
   console.log(`[pushLineFlex] Sending flex message to ${lineUserId}`);
-  
+
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
     console.error("[pushLineFlex] LINE_CHANNEL_ACCESS_TOKEN not configured");
     return;
   }
-  
+
   const url = "https://api.line.me/v2/bot/message/push";
   const headers = { "content-type": "application/json", "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` };
   const body = { to: lineUserId, messages: [{ type: "flex", altText: "สรุปงานวันนี้", contents: bubble }] };
-  
+
   try {
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-    if (!res.ok) { 
-      const msg = await res.text().catch(() => res.statusText); 
-      console.error("[pushLineFlex] LINE push FLEX error:", res.status, msg); 
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.statusText);
+      console.error("[pushLineFlex] LINE push FLEX error:", res.status, msg);
     } else {
       console.log(`[pushLineFlex] Successfully sent flex to ${lineUserId}`);
     }
