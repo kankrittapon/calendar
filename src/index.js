@@ -461,19 +461,16 @@ export default {
 
   async scheduled(event, env, ctx) {
     try {
-      const format = (env.AGENDA_FORMAT || "flex").toLowerCase(); // "text" | "flex"
+      const format = (env.AGENDA_FORMAT || "flex").toLowerCase();
       
-      // วันที่ไทย (UTC+7)
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
       const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
       const hour = bangkok.getHours();
       
       if (hour === 8) {
-        // 08:30 - สรุปงานวันนี้
         await sendDailyAgendaToBoss(env, { format, type: 'today' });
       } else if (hour === 20) {
-        // 20:00 - สรุปงานพรุ่งนี้
         await sendDailyAgendaToBoss(env, { format, type: 'tomorrow' });
       }
     } catch (e) {
@@ -727,22 +724,20 @@ async function loadAllUsers(){
   if(res.ok && result.data) {
     allUsers = result.data;
     
-    // แสดงรายการ
     const usersList = result.data.map(user => {
       const roleText = user.role === 'boss' ? 'หัวหน้า' : 'เลขา';
       const lineId = user.line_user_id || '-';
-      return `${user.name} (${roleText}) - LINE: ${lineId}`;
+      return user.name + ' (' + roleText + ') - LINE: ' + lineId;
     }).join('\n');
     
     document.getElementById('usersList').textContent = usersList || 'ไม่มีผู้ใช้';
     
-    // เติม dropdown
     const userSelect = document.getElementById('userSelect');
     userSelect.innerHTML = '<option value="">-- เลือกผู้ใช้ --</option>';
     result.data.forEach(user => {
       const option = document.createElement('option');
       option.value = user.id;
-      option.textContent = `${user.name} (${user.role === 'boss' ? 'หัวหน้า' : 'เลขา'})`;
+      option.textContent = user.name + ' (' + (user.role === 'boss' ? 'หัวหน้า' : 'เลขา') + ')';
       userSelect.appendChild(option);
     });
     
@@ -773,7 +768,6 @@ async function updateUserRole(){
   document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
   
   if(res.ok) {
-    // รีเฟรชรายการ
     loadAllUsers();
   }
 }
@@ -786,7 +780,7 @@ async function deleteUser(){
   if(!userId) return alert('กรุณาเลือกผู้ใช้');
   
   const selectedUser = allUsers.find(u => u.id === userId);
-  if(!confirm(`ต้องการลบผู้ใช้ "${selectedUser?.name}" หรือไม่?`)) return;
+  if(!confirm('ต้องการลบผู้ใช้ "' + (selectedUser?.name || 'Unknown') + '" หรือไม่?')) return;
   
   const res = await fetch('/admin/user/delete', {
     method: 'DELETE',
@@ -801,7 +795,6 @@ async function deleteUser(){
   document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
   
   if(res.ok) {
-    // รีเฟรชรายการ
     document.getElementById('userSelect').selectedIndex = 0;
     loadAllUsers();
   }
@@ -930,7 +923,6 @@ async function render(){
       let dayCount = 1;
       const weeks = Math.ceil((daysInMonth + startDay) / 7);
       
-      // หัวตาราง
       const dayHeaders = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
       html += '<div class="row" style="background:#1e293b;border-radius:8px 8px 0 0">';
       dayHeaders.forEach(dayName => {
@@ -1081,7 +1073,6 @@ document.addEventListener('DOMContentLoaded', function(){
  * Cron helpers
  * ========================= */
 async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type = "today" } = {}) {
-  // วันที่ไทย (UTC+7)
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
   const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
@@ -1097,11 +1088,9 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
     dateForQuery = `${bangkok.getFullYear()}-${String(bangkok.getMonth()+1).padStart(2,"0")}-${String(bangkok.getDate()).padStart(2,"0")}`;
   }
   
-  // ตรวจสอบวันเสาร์-อาทิตย์ (0=อาทิตย์, 6=เสาร์)
   const dayOfWeek = targetDate.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-  // boss ที่ผูก line_user_id
   const bosses = await env.schedule_db
     .prepare("SELECT id, name, line_user_id FROM users WHERE role='boss' AND line_user_id IS NOT NULL")
     .all();
@@ -1110,7 +1099,6 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
     return;
   }
 
-  // งานของวันที่กำหนด
   const schedules = await env.schedule_db
     .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,attend_status
               FROM schedules
@@ -1121,7 +1109,6 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
 
   const items = schedules?.results || [];
   
-  // ถ้าเป็นวันเสาร์-อาทิตย์ และไม่มีงาน ไม่ต้องแจ้งเตือน
   if (isWeekend && items.length === 0) {
     console.log(`[cron] Skip weekend notification - no tasks on ${dateForQuery}`);
     return;
@@ -1135,7 +1122,6 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
   for (const b of bosses.results) {
     const target = b.line_user_id;
 
-    // กันส่งซ้ำในวันเดียวกัน - ยกเว้นถ้าเป็น force mode
     if (!force) {
       const notificationType = type === "tomorrow" ? "tomorrow" : "daily";
       const already = await env.schedule_db
@@ -1152,7 +1138,6 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
       await pushLineText(env, target, asText);
     }
 
-    // บันทึกล็อกการส่ง - ยกเว้นถ้าเป็น force mode
     if (!force) {
       const nid = crypto.randomUUID();
       const notificationType = type === "tomorrow" ? "tomorrow" : "daily";
@@ -1178,7 +1163,6 @@ function buildAgendaText(dateStr, items, dayText = "วันนี้") {
 }
 
 function buildAgendaFlex(dateStr, items, dayText = "วันนี้") {
-  // แปลงวันที่เป็นรูปแบบไทย
   const date = new Date(dateStr);
   const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
   const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 
@@ -1187,15 +1171,15 @@ function buildAgendaFlex(dateStr, items, dayText = "วันนี้") {
   const dayName = thaiDays[date.getDay()];
   const day = date.getDate();
   const month = thaiMonths[date.getMonth()];
-  const year = date.getFullYear() + 543; // พ.ศ.
+  const year = date.getFullYear() + 543;
   
   const thaiDateStr = `${dayName} วันที่ ${day} ${month} ${year}`;
   
   const categoryColors = {
-    '00000000-0000-0000-0000-000000000001': '#3b82f6', // งานในหน่วย - น้ำเงิน
-    '00000000-0000-0000-0000-000000000002': '#10b981', // งานในกรม - เขียว
-    '00000000-0000-0000-0000-000000000003': '#f59e0b', // งานใหญ่ - เหลือง
-    '00000000-0000-0000-0000-000000000004': '#ef4444'  // งานนอก - แดง
+    '00000000-0000-0000-0000-000000000001': '#3b82f6',
+    '00000000-0000-0000-0000-000000000002': '#10b981',
+    '00000000-0000-0000-0000-000000000003': '#f59e0b',
+    '00000000-0000-0000-0000-000000000004': '#ef4444'
   };
   
   const rows = items.map((s,i) => {
@@ -1240,7 +1224,7 @@ function buildAgendaFlex(dateStr, items, dayText = "วันนี้") {
         {
           type: "box", layout: "vertical", spacing: "sm",
           contents: [
-            { type: "text", text: "📅 ตารางงานประจำวัน", weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
+            { type: "text", text: `📅 ตารางงานประจำวัน${dayText}`, weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
             { type: "text", text: thaiDateStr, size: "sm", color: "#94a3b8", align: "center" }
           ]
         },
