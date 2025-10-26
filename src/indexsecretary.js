@@ -41,7 +41,7 @@ td{padding:12px;border-bottom:1px solid var(--border)}
   <div class="row">
     <div><label>ชื่อเรื่อง <input id="title" /></label></div>
     <div><label>วันที่ (1-31) <input id="date" type="number" min="1" max="31" placeholder="22" /></label></div>
-    <div><label>เวลาเริ่ม 
+    <div><label>เวลาเริ่ม
       <select id="start">
         <option value="">เลือกเวลา</option>
         <option value="08:30">08:30</option><option value="09:00">09:00</option><option value="09:30">09:30</option>
@@ -52,7 +52,7 @@ td{padding:12px;border-bottom:1px solid var(--border)}
         <option value="16:00">16:00</option><option value="16:30">16:30</option><option value="17:00">17:00</option>
       </select>
     </label></div>
-    <div><label>เวลาจบ 
+    <div><label>เวลาจบ
       <select id="end">
         <option value="">เลือกเวลา</option>
         <option value="09:00">09:00</option><option value="09:30">09:30</option><option value="10:00">10:00</option>
@@ -84,11 +84,11 @@ td{padding:12px;border-bottom:1px solid var(--border)}
 <div class="card">
   <h2>รายการงาน</h2>
   <div class="row">
-    <div><label>ดูของวันที่ <input id="qdate" /></label></div>
+    <div><label>ดูของวันที่ <input id="qdate" type="date" /></label></div>
     <div><button class="btn" onclick="loadList()">โหลด</button></div>
   </div>
   <table>
-    <thead><tr><th>เวลา</th><th>เรื่อง</th><th>สถานที่</th><th>หมวดหมู่</th><th>สถานะ</th><th>การตอบ</th><th>จัดการ</th></tr></thead>
+    <thead><tr><th>วันที่</th><th>เวลา</th><th>เรื่อง</th><th>สถานที่</th><th>หมวดหมู่</th><th>สถานะ</th><th>การตอบ</th><th>จัดการ</th></tr></thead>
     <tbody id="list"></tbody>
   </table>
 </div>
@@ -102,10 +102,10 @@ const $ = (id) => document.getElementById(id);
 async function createSchedule(){
   const day = $('date').value;
   if(!day) return alert('กรุณาใส่วันที่');
-  
+
   const now = new Date();
   const currentDate = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
-  
+
   const body = {
     title: $('title').value, date: currentDate, start_time: $('start').value,
     end_time: $('end').value || null, place: $('place').value || null,
@@ -128,6 +128,7 @@ async function loadList(){
     const time = s.end_time ? (s.start_time+'–'+s.end_time) : s.start_time;
     const att = s.attend_status || '-';
     return '<tr>'+
+      '<td>'+ (s.date||'') +'</td>'+
       '<td>'+ (time||'') +'</td>'+
       '<td>'+ (s.title||'') +'</td>'+
       '<td>'+ (s.place||'') +'</td>'+
@@ -198,14 +199,14 @@ function editTask(id){
       };
     }
   });
-  
+
   if(!taskData) return alert('ไม่พบข้อมูลงาน');
-  
+
   $('title').value = taskData.title;
   $('start').value = taskData.start_time;
   $('end').value = taskData.end_time;
   $('place').value = taskData.place;
-  
+
   const btn = document.querySelector('button[onclick="createSchedule()"]');
   btn.textContent = 'อัพเดทงาน';
   btn.onclick = () => updateTask(id);
