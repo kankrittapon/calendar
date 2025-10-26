@@ -113,7 +113,7 @@ button{background:#16a34a;color:#fff;cursor:pointer;border:none}
 
 <div class="card">
   <h2>Load Users</h2>
-  <button onclick="fetch('/admin/users',{headers:{'authorization':'Bearer '+window.token}}).then(r=>r.json()).then(d=>document.getElementById('result3').textContent=JSON.stringify(d,null,2))">Load Users</button>
+  <button onclick="fetch('/admin/users',{headers:{'Authorization':'Bearer '+window.token}}).then(r=>r.json()).then(d=>document.getElementById('result3').textContent=JSON.stringify(d,null,2))">Load Users</button>
   <div id="result3" class="result"></div>
 </div>
 
