@@ -481,8 +481,8 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
               if (msg === "เพิ่มงาน") {
                 await replyText(env, ev.replyToken,
                   "📝 วิธีเพิ่มงาน:\n\n" +
-                  "🔸 งานเดียว:\nเพิ่มงาน:ประชุม,2025-01-15,14:00,ห้องประชุม\n\n" +
-                  "🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม,2025-01-15,14:00,ห้องประชุม|อบรม,2025-01-16,09:00,ห้องอบรม");
+                  "🔸 งานเดียว:\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม\n\n" +
+                  "🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม|อบรม,16,09:00,ห้องอบรม");
                 continue;
               }
 
@@ -491,7 +491,7 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
               const results = [];
 
               for (const taskStr of taskList) {
-                const parts = taskStr.split(",").map(s => s?.trim());
+                const parts = taskStr.trim().split(/\s+/);
                 const [title, date, start_time, location] = parts;
 
                 if (!title || !date || !start_time) {
@@ -1732,7 +1732,7 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
 
     console.log(`[sendDailyAgendaToBoss] Sending ${format} message to ${target}`);
 
-    if (format === "flex" && items.length) {
+    if (items.length) {
       const bubble = buildAgendaFlex(dateForQuery, items, dayText);
       await pushLineFlex(env, target, bubble);
       console.log(`[sendDailyAgendaToBoss] Sent flex message to ${target}`);
@@ -2129,17 +2129,63 @@ async function notifyBossNewSchedule(env, scheduleId) {
     .all();
 
   const time = schedule.end_time ? `${schedule.start_time}–${schedule.end_time}` : schedule.start_time;
-  const message = `🔔 งานใหม่\n📅 ${schedule.date}\n⏰ ${time}\n📝 ${schedule.title}\n📍 ${schedule.place || '-'}`;
+
+  const bubble = {
+    type: "bubble",
+    header: { type: "box", layout: "vertical", contents: [
+      { type: "text", text: "🔔 งานใหม่เข้ามา", weight: "bold", size: "lg", color: "#10b981" }
+    ]},
+    body: { type: "box", layout: "vertical", spacing: "md", contents: [
+      { type: "box", layout: "baseline", spacing: "sm", contents: [
+        { type: "text", text: "📅 วันที่:", size: "sm", color: "#9ca3af", flex: 2 },
+        { type: "text", text: schedule.date, size: "sm", color: "#e5e7eb", flex: 3 }
+      ]},
+      { type: "box", layout: "baseline", spacing: "sm", contents: [
+        { type: "text", text: "⏰ เวลา:", size: "sm", color: "#9ca3af", flex: 2 },
+        { type: "text", text: time, size: "sm", color: "#e5e7eb", flex: 3 }
+      ]},
+      { type: "box", layout: "baseline", spacing: "sm", contents: [
+        { type: "text", text: "📝 เรื่อง:", size: "sm", color: "#9ca3af", flex: 2 },
+        { type: "text", text: schedule.title, size: "sm", color: "#e5e7eb", flex: 3, wrap: true }
+      ]},
+      { type: "box", layout: "baseline", spacing: "sm", contents: [
+        { type: "text", text: "📍 สถานที่:", size: "sm", color: "#9ca3af", flex: 2 },
+        { type: "text", text: schedule.place || "-", size: "sm", color: "#e5e7eb", flex: 3, wrap: true }
+      ]}
+    ]}
+  };
 
   for (const boss of bosses.results || []) {
-    await pushLineText(env, boss.line_user_id, message);
+    await pushLineFlex(env, boss.line_user_id, bubble);
   }
 }
 
 async function notifySecretaryUrgentTask(env, task) {
-  // ส่งแจ้งเตือนไปเลขา (สามารถใช้ LINE หรือระบบอื่น)
-  console.log(`🚨 งานด่วนจากหัวหน้า: ${task}`);
-  // TODO: ส่งไป LINE ของเลขาหรือระบบแจ้งเตือนอื่น
+  const secretaries = await env.schedule_db
+    .prepare("SELECT line_user_id FROM users WHERE role='secretary' AND line_user_id IS NOT NULL")
+    .all();
+
+  if (!secretaries?.results?.length) {
+    console.log(`🚨 ไม่มีเลขาที่มี LINE ID: ${task}`);
+    return;
+  }
+
+  const bubble = {
+    type: "bubble",
+    header: { type: "box", layout: "vertical", contents: [
+      { type: "text", text: "🚨 งานด่วนจากหัวหน้า", weight: "bold", size: "lg", color: "#ef4444" }
+    ]},
+    body: { type: "box", layout: "vertical", spacing: "md", contents: [
+      { type: "text", text: task, size: "md", color: "#e5e7eb", wrap: true }
+    ]},
+    footer: { type: "box", layout: "vertical", spacing: "sm", contents: [
+      { type: "text", text: "⏰ " + new Date().toLocaleString('th-TH'), size: "xs", color: "#9ca3af" }
+    ]}
+  };
+
+  for (const sec of secretaries.results) {
+    await pushLineFlex(env, sec.line_user_id, bubble);
+  }
 }
 
 function buildScheduleFlexWithActions(dateStr, items) {
