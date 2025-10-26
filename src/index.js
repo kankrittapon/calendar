@@ -76,7 +76,7 @@ export default {
       // หน้าทดสอบ (ใช้ HTML สะอาด)
       if (pathname === "/test" && method === "GET") {
         console.log("Test page accessed");
-        return new Response(renderCleanTestPage(), { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response(renderTestHTML(), { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
       }
 
       /* ======= Public APIs (อ่านอย่างเดียว ไม่ต้อง auth) ======= */
@@ -517,6 +517,207 @@ export default {
 /* =========================
  * Calendar (Public HTML)
  * ========================= */
+function renderTestHTML() {
+  return `<!doctype html>
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Test Console</title>
+<style>
+body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
+.card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
+input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+button{background:#16a34a;color:#fff;cursor:pointer;border:none}
+button:hover{background:#15803d}
+.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap;font-family:monospace;font-size:14px}
+.token-section{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
+.success{color:#10b981}
+.error{color:#ef4444}
+.warning{color:#f59e0b}
+h1{color:#f8fafc;margin-bottom:24px}
+h2{color:#e5e7eb;margin-bottom:12px;font-size:18px}
+label{display:block;margin-bottom:4px;color:#cbd5e1;font-size:14px}
+.form-row{display:flex;gap:8px;align-items:end}
+.form-row > *{flex:1}
+</style></head>
+<body>
+<h1>🧪 Test Console</h1>
+
+<div class="token-section">
+  <h2>🔑 Admin Token</h2>
+  <label>SEED_ADMIN_TOKEN:</label>
+  <input id="adminToken" type="password" placeholder="Enter admin token" style="width:300px"/>
+  <button onclick="setToken()">Set Token</button>
+  <div id="tokenStatus" style="margin-top:8px;font-size:14px"></div>
+</div>
+
+<div class="card">
+  <h2>📤 Test Send Message</h2>
+  <label>LINE User ID:</label>
+  <input id="lineUserId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+  <div class="form-row">
+    <div>
+      <label>Message Format:</label>
+      <select id="messageFormat">
+        <option value="text">Text Message</option>
+        <option value="flex">Flex Message</option>
+      </select>
+    </div>
+  </div>
+  <label>Message Content:</label>
+  <textarea id="messageContent" rows="3" style="width:100%">Hello from test console!</textarea>
+  <button onclick="sendTestMessage()">Send Message</button>
+  <div id="sendResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>⏰ Test Cron Job</h2>
+  <div class="form-row">
+    <div>
+      <label>Format:</label>
+      <select id="cronFormat">
+        <option value="text">Text</option>
+        <option value="flex">Flex Message</option>
+      </select>
+    </div>
+    <div>
+      <button onclick="testCron()">Test Cron</button>
+    </div>
+  </div>
+  <div id="cronResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>👥 User Management</h2>
+  <button onclick="loadUsers()">Load All Users</button>
+  <div id="usersResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>🔗 Quick Links</h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a href="/secretary" style="color:#60a5fa;text-decoration:none;padding:8px 12px;background:#1f2937;border-radius:6px">Secretary Panel</a>
+    <a href="/calendar" style="color:#60a5fa;text-decoration:none;padding:8px 12px;background:#1f2937;border-radius:6px">Public Calendar</a>
+    <a href="/health" style="color:#60a5fa;text-decoration:none;padding:8px 12px;background:#1f2937;border-radius:6px">Health Check</a>
+  </div>
+</div>
+
+<script>
+let globalToken = '';
+
+function setToken() {
+  globalToken = document.getElementById('adminToken').value.trim();
+  const status = document.getElementById('tokenStatus');
+  if (globalToken) {
+    status.textContent = '✅ Token set successfully';
+    status.className = 'success';
+    loadUsers();
+  } else {
+    status.textContent = '❌ Please enter a valid token';
+    status.className = 'error';
+  }
+}
+
+function getAuthHeaders() {
+  if (!globalToken) {
+    alert('Please set admin token first');
+    return null;
+  }
+  return {
+    'Authorization': 'Bearer ' + globalToken,
+    'Content-Type': 'application/json'
+  };
+}
+
+async function sendTestMessage() {
+  const lineUserId = document.getElementById('lineUserId').value.trim();
+  const format = document.getElementById('messageFormat').value;
+  const message = document.getElementById('messageContent').value.trim();
+  const resultDiv = document.getElementById('sendResult');
+  
+  if (!lineUserId || !message) {
+    resultDiv.textContent = 'Please fill in all fields';
+    resultDiv.className = 'result error';
+    return;
+  }
+  
+  try {
+    resultDiv.textContent = 'Sending...';
+    resultDiv.className = 'result';
+    
+    const response = await fetch('/test/send-to-boss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lineUserId, message, format })
+    });
+    
+    const result = await response.json();
+    resultDiv.textContent = JSON.stringify(result, null, 2);
+    resultDiv.className = response.ok ? 'result success' : 'result error';
+  } catch (error) {
+    resultDiv.textContent = 'Error: ' + error.message;
+    resultDiv.className = 'result error';
+  }
+}
+
+async function testCron() {
+  const format = document.getElementById('cronFormat').value;
+  const resultDiv = document.getElementById('cronResult');
+  
+  try {
+    resultDiv.textContent = 'Running cron test...';
+    resultDiv.className = 'result';
+    
+    const response = await fetch('/test/cron', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format })
+    });
+    
+    const result = await response.json();
+    resultDiv.textContent = JSON.stringify(result, null, 2);
+    resultDiv.className = response.ok ? 'result success' : 'result error';
+  } catch (error) {
+    resultDiv.textContent = 'Error: ' + error.message;
+    resultDiv.className = 'result error';
+  }
+}
+
+async function loadUsers() {
+  const headers = getAuthHeaders();
+  if (!headers) return;
+  
+  const resultDiv = document.getElementById('usersResult');
+  
+  try {
+    resultDiv.textContent = 'Loading users...';
+    resultDiv.className = 'result';
+    
+    const response = await fetch('/admin/users', { headers });
+    const result = await response.json();
+    
+    if (response.ok && result.data) {
+      const usersList = result.data.map(user => {
+        const role = user.role === 'boss' ? 'Boss' : 'Secretary';
+        const lineId = user.line_user_id || 'No LINE ID';
+        return user.name + ' (' + role + ') - ' + lineId;
+      }).join('\n');
+      
+      resultDiv.textContent = usersList || 'No users found';
+      resultDiv.className = 'result success';
+    } else {
+      resultDiv.textContent = JSON.stringify(result, null, 2);
+      resultDiv.className = 'result error';
+    }
+  } catch (error) {
+    resultDiv.textContent = 'Error: ' + error.message;
+    resultDiv.className = 'result error';
+  }
+}
+</script>
+</body></html>`;
+}
+
 function renderCleanTestPage() {
   return `<!doctype html>
 <html lang="th"><head>
