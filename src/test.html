@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Test Console</title>
+  <style>
+    body {
+      font-family: system-ui;
+      margin: 24px;
+      background: #0b0e17;
+      color: #e5e7eb;
+    }
+    .card {
+      background: #141927;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    input, textarea, button, select {
+      font: inherit;
+      padding: 8px;
+      margin: 4px 0;
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      border-radius: 6px;
+    }
+    button {
+      background: #16a34a;
+      color: #fff;
+      cursor: pointer;
+      border: none;
+    }
+    button:hover {
+      background: #15803d;
+    }
+    .result {
+      background: #0f1422;
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 8px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .user-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .user-item {
+      background: #1f2937;
+      padding: 12px;
+      border-radius: 6px;
+      border-left: 4px solid #3b82f6;
+    }
+    .user-item.boss {
+      border-left-color: #ef4444;
+    }
+    .user-item.secretary {
+      border-left-color: #10b981;
+    }
+    .user-item strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .user-item small {
+      color: #9ca3af;
+      display: block;
+      margin-top: 4px;
+    }
+    h1 {
+      color: #f8fafc;
+      margin-bottom: 24px;
+    }
+    h2 {
+      color: #e5e7eb;
+      margin-bottom: 12px;
+      font-size: 18px;
+    }
+    h3 {
+      color: #cbd5e1;
+      margin-top: 16px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+    .form-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .form-row > * {
+      flex: 1;
+    }
+    .button-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .button-group button {
+      flex: 1;
+    }
+    button.reload {
+      background: #f59e0b;
+    }
+    button.reload:hover {
+      background: #d97706;
+    }
+    button.delete {
+      background: #ef4444;
+    }
+    button.delete:hover {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <h1>Test Console</h1>
+
+  <div class="card">
+    <h2>Admin Token</h2>
+    <label>SEED_ADMIN_TOKEN:</label>
+    <input id="token" type="password" placeholder="SEED_ADMIN_TOKEN" style="width:300px"/>
+    <button onclick="window.token=document.getElementById('token').value;alert('Token set')">Set Token</button>
+  </div>
+
+  <div class="card">
+    <h2>Test Send Message</h2>
+    <label>LINE User ID:</label>
+    <input id="userId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+    <label>Message:</label>
+    <textarea id="msg" rows="3" style="width:100%">Test message</textarea>
+    <button onclick="fetch('/test/send-to-boss',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('userId').value,message:document.getElementById('msg').value,format:'text'})}).then(r=>r.json()).then(d=>document.getElementById('result1').textContent=JSON.stringify(d,null,2)).catch(e=>document.getElementById('result1').textContent='Error: '+e.message)">Send</button>
+    <div id="result1" class="result"></div>
+  </div>
+
+  <div class="card">
+    <h2>Test Cron</h2>
+    <button onclick="fetch('/test/cron',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format:'text'})}).then(r=>r.json()).then(d=>document.getElementById('result2').textContent=JSON.stringify(d,null,2)).catch(e=>document.getElementById('result2').textContent='Error: '+e.message)">Test Cron</button>
+    <div id="result2" class="result"></div>
+  </div>
+
+  <div class="card">
+    <h2>Load Users</h2>
+    <button onclick="loadUsers()">Load Users</button>
+    <div id="userGrid" class="user-grid"></div>
+  </div>
+
+  <div class="card">
+    <h2>User Management</h2>
+
+    <h3>Manage User</h3>
+    <label>Select User:</label>
+    <select id="userManageSelect" style="width:100%"><option value="">Select existing user</option></select>
+    <label>Select Role:</label>
+    <select id="roleSelect" style="width:100%">
+      <option value="boss">Set as Boss</option>
+      <option value="secretary">Set as Secretary</option>
+    </select>
+    <button onclick="manageUser()">Update Role</button>
+    <div id="result4" class="result"></div>
+
+    <h3>Add New User</h3>
+    <label>Select LINE User ID:</label>
+    <select id="lineIdSelect" style="width:100%">
+      <option value="">Select LINE User ID</option>
+      <option value="Ue358aad024251165657dfcb85c8755fe">Boss LINE ID</option>
+      <option value="U1234567890abcdef1234567890abcdef">Secretary 1</option>
+      <option value="U9876543210fedcba9876543210fedcba">Secretary 2</option>
+      <option value="Uabcdef1234567890abcdef1234567890">Test User</option>
+    </select>
+    <label>Name (optional):</label>
+    <input id="newName" placeholder="Name (optional)" style="width:100%"/>
+    <label>Select Role:</label>
+    <select id="newRoleSelect" style="width:100%">
+      <option value="boss">Add as Boss</option>
+      <option value="secretary">Add as Secretary</option>
+    </select>
+    <button onclick="addNewUser()">Add User</button>
+    <div id="addResult" class="result"></div>
+
+    <h3>Delete User</h3>
+    <label>Select User to Delete:</label>
+    <select id="userSelect" style="width:100%"><option value="">Select user to delete</option></select>
+    <div class="button-group">
+      <button onclick="deleteUser()">Delete User</button>
+      <button class="reload" onclick="loadUsers()">Reload</button>
+    </div>
+    <div id="result5" class="result"></div>
+  </div>
+
+  <script>
+    window.users = [];
+
+    function loadUsers() {
+      if (!window.token) {
+        alert('Please set token first');
+        return;
+      }
+
+      fetch('/admin/users', {
+        headers: { 'Authorization': 'Bearer ' + window.token }
+      })
+      .then(r => r.json())
+      .then(d => {
+        window.users = d.data || [];
+        updateUserGrid();
+        updateUserSelects();
+      })
+      .catch(e => {
+        console.error('Error loading users:', e);
+        alert('Error loading users: ' + e.message);
+      });
+    }
+
+    function updateUserGrid() {
+      const grid = document.getElementById('userGrid');
+      if (window.users.length === 0) {
+        grid.innerHTML = '<p style="color: #9ca3af;">No users found</p>';
+        return;
+      }
+
+      grid.innerHTML = window.users.map(u =>
+        `<div class="user-item ${u.role}">
+          <strong>${u.name}</strong>
+          <span>${u.role}</span>
+          <small>${u.line_user_id || 'No LINE ID'}</small>
+        </div>`
+      ).join('');
+    }
+
+    function updateUserSelects() {
+      ['userSelect', 'userManageSelect'].forEach(id => {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">Select user</option>';
+        window.users.forEach(u => {
+          const opt = document.createElement('option');
+          opt.value = u.id;
+          opt.textContent = u.name + ' (' + u.role + ') - ID: ' + u.id.substring(0, 8) + '...';
+          select.appendChild(opt);
+        });
+      });
+    }
+
+    function manageUser() {
+      const userId = document.getElementById('userManageSelect').value;
+      const role = document.getElementById('roleSelect').value;
+
+      if (!userId) {
+        alert('Select user');
+        return;
+      }
+
+      if (!window.token) {
+        alert('Please set token first');
+        return;
+      }
+
+      fetch('/admin/user/role', {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'Bearer ' + window.token,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ userId, role })
+      })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('result4').textContent = JSON.stringify(d, null, 2);
+        loadUsers();
+      })
+      .catch(e => {
+        document.getElementById('result4').textContent = 'Error: ' + e.message;
+      });
+    }
+
+    function addNewUser() {
+      const lineUserId = document.getElementById('lineIdSelect').value;
+      const name = document.getElementById('newName').value || 'User';
+      const role = document.getElementById('newRoleSelect').value;
+
+      if (!lineUserId) {
+        alert('Select LINE ID');
+        return;
+      }
+
+      if (!window.token) {
+        alert('Please set token first');
+        return;
+      }
+
+      const endpoint = role === 'boss' ? '/admin/boss/set' : '/admin/secretary/add';
+      const body = role === 'boss' ? { lineUserId } : { lineUserId, name };
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + window.token,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('addResult').textContent = JSON.stringify(d, null, 2);
+        loadUsers();
+      })
+      .catch(e => {
+        document.getElementById('addResult').textContent = 'Error: ' + e.message;
+      });
+    }
+
+    function deleteUser() {
+      const userId = document.getElementById('userSelect').value;
+
+      if (!userId) {
+        alert('Select user');
+        return;
+      }
+
+      if (!confirm('Delete user?')) {
+        return;
+      }
+
+      if (!window.token) {
+        alert('Please set token first');
+        return;
+      }
+
+      fetch('/admin/user/delete', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Bearer ' + window.token,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ userId })
+      })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('result5').textContent = JSON.stringify(d, null, 2);
+        loadUsers();
+      })
+      .catch(e => {
+        document.getElementById('result5').textContent = 'Error: ' + e.message;
+      });
+    }
+  </script>
+</body>
+</html>
