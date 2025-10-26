@@ -915,10 +915,12 @@ function renderTestPage() {
 <style>
 body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
 .card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
-input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
-button{background:#16a34a;color:#fff;cursor:pointer}
-.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap}
+input,textarea,button,select{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+button{background:#16a34a;color:#fff;cursor:pointer;border:none}
+button:hover{background:#15803d}
+.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap;font-family:monospace;font-size:12px}
 .global-token{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
+h3{color:#cbd5e1;margin-top:16px;margin-bottom:8px;font-size:14px}
 </style></head>
 <body>
 <h1>ทดสอบระบบ Schedule Worker</h1>
