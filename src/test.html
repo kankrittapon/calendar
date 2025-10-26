@@ -1,359 +1,387 @@
 <!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Test Console</title>
-  <style>
-    body {
-      font-family: system-ui;
-      margin: 24px;
-      background: #0b0e17;
-      color: #e5e7eb;
-    }
-    .card {
-      background: #141927;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    input, textarea, button, select {
-      font: inherit;
-      padding: 8px;
-      margin: 4px 0;
-      background: #1f2937;
-      color: #e5e7eb;
-      border: 1px solid #374151;
-      border-radius: 6px;
-    }
-    button {
-      background: #16a34a;
-      color: #fff;
-      cursor: pointer;
-      border: none;
-    }
-    button:hover {
-      background: #15803d;
-    }
-    .result {
-      background: #0f1422;
-      padding: 12px;
-      border-radius: 8px;
-      margin-top: 8px;
-      white-space: pre-wrap;
-      font-family: monospace;
-      font-size: 12px;
-      max-height: 300px;
-      overflow-y: auto;
-    }
-    .user-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .user-item {
-      background: #1f2937;
-      padding: 12px;
-      border-radius: 6px;
-      border-left: 4px solid #3b82f6;
-    }
-    .user-item.boss {
-      border-left-color: #ef4444;
-    }
-    .user-item.secretary {
-      border-left-color: #10b981;
-    }
-    .user-item strong {
-      display: block;
-      margin-bottom: 4px;
-    }
-    .user-item small {
-      color: #9ca3af;
-      display: block;
-      margin-top: 4px;
-    }
-    h1 {
-      color: #f8fafc;
-      margin-bottom: 24px;
-    }
-    h2 {
-      color: #e5e7eb;
-      margin-bottom: 12px;
-      font-size: 18px;
-    }
-    h3 {
-      color: #cbd5e1;
-      margin-top: 16px;
-      margin-bottom: 8px;
-      font-size: 14px;
-    }
-    label {
-      display: block;
-      margin-bottom: 4px;
-      color: #cbd5e1;
-      font-size: 14px;
-    }
-    .form-row {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .form-row > * {
-      flex: 1;
-    }
-    .button-group {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .button-group button {
-      flex: 1;
-    }
-    button.reload {
-      background: #f59e0b;
-    }
-    button.reload:hover {
-      background: #d97706;
-    }
-    button.delete {
-      background: #ef4444;
-    }
-    button.delete:hover {
-      background: #dc2626;
-    }
-  </style>
-</head>
+<html lang="th"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ทดสอบระบบ</title>
+<style>
+body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
+.card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
+input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+button{background:#16a34a;color:#fff;cursor:pointer}
+.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap}
+.global-token{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
+</style></head>
 <body>
-  <h1>Test Console</h1>
+<h1>ทดสอบระบบ Schedule Worker</h1>
 
-  <div class="card">
-    <h2>Admin Token</h2>
-    <label>SEED_ADMIN_TOKEN:</label>
-    <input id="token" type="password" placeholder="SEED_ADMIN_TOKEN" style="width:300px"/>
-    <button onclick="window.token=document.getElementById('token').value;alert('Token set')">Set Token</button>
-  </div>
+<div class="global-token">
+  <h2>🔑 ตั้งค่า Token สำหรับทุกฟีเจอร์</h2>
+  <label>SEED_ADMIN_TOKEN:<br>
+    <input id="globalToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:300px"/>
+  </label>
+  <button onclick="setGlobalToken()">ตั��งค่า Token</button>
+  <div id="tokenStatus" style="margin-top:8px;font-size:14px"></div>
+</div>
 
-  <div class="card">
-    <h2>Test Send Message</h2>
-    <label>LINE User ID:</label>
-    <input id="userId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
-    <label>Message:</label>
-    <textarea id="msg" rows="3" style="width:100%">Test message</textarea>
-    <button onclick="fetch('/test/send-to-boss',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('userId').value,message:document.getElementById('msg').value,format:'text'})}).then(r=>r.json()).then(d=>document.getElementById('result1').textContent=JSON.stringify(d,null,2)).catch(e=>document.getElementById('result1').textContent='Error: '+e.message)">Send</button>
-    <div id="result1" class="result"></div>
-  </div>
-
-  <div class="card">
-    <h2>Test Cron</h2>
-    <button onclick="fetch('/test/cron',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format:'text'})}).then(r=>r.json()).then(d=>document.getElementById('result2').textContent=JSON.stringify(d,null,2)).catch(e=>document.getElementById('result2').textContent='Error: '+e.message)">Test Cron</button>
-    <div id="result2" class="result"></div>
-  </div>
-
-  <div class="card">
-    <h2>Load Users</h2>
-    <button onclick="loadUsers()">Load Users</button>
-    <div id="userGrid" class="user-grid"></div>
-  </div>
-
-  <div class="card">
-    <h2>User Management</h2>
-
-    <h3>Manage User</h3>
-    <label>Select User:</label>
-    <select id="userManageSelect" style="width:100%"><option value="">Select existing user</option></select>
-    <label>Select Role:</label>
-    <select id="roleSelect" style="width:100%">
-      <option value="boss">Set as Boss</option>
-      <option value="secretary">Set as Secretary</option>
+<div class="card">
+  <h2>ทดสอบส่งข้อความให้ Boss</h2>
+  <label>LINE User ID ของ Boss:<br>
+    <input id="lineUserId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+  </label>
+  <label>รูปแบบ:
+    <select id="messageFormat">
+      <option value="text">Text Message</option>
+      <option value="flex">Flex Message (ตารางงานวันนี้)</option>
     </select>
-    <button onclick="manageUser()">Update Role</button>
-    <div id="result4" class="result"></div>
+  </label>
+  <label>ข้อความ (สำหรับ text):<br>
+    <textarea id="message" rows="3" style="width:100%">สวัสดีครับ นี่คือการทดสอบส่งข้อความจาก Schedule Worker</textarea>
+  </label>
+  <button onclick="testSendToBoss()">ส่งข้อความทดสอบ</button>
+  <div id="sendResult" class="result"></div>
+</div>
 
-    <h3>Add New User</h3>
-    <label>Select LINE User ID:</label>
-    <select id="lineIdSelect" style="width:100%">
-      <option value="">Select LINE User ID</option>
-      <option value="Ue358aad024251165657dfcb85c8755fe">Boss LINE ID</option>
-      <option value="U1234567890abcdef1234567890abcdef">Secretary 1</option>
-      <option value="U9876543210fedcba9876543210fedcba">Secretary 2</option>
-      <option value="Uabcdef1234567890abcdef1234567890">Test User</option>
+<div class="card">
+  <h2>ทดสอบ Cron Job (สรุปงานประจำวัน)</h2>
+  <label>รูปแบบ:
+    <select id="cronFormat">
+      <option value="text">Text</option>
+      <option value="flex">Flex Message</option>
     </select>
-    <label>Name (optional):</label>
-    <input id="newName" placeholder="Name (optional)" style="width:100%"/>
-    <label>Select Role:</label>
-    <select id="newRoleSelect" style="width:100%">
-      <option value="boss">Add as Boss</option>
-      <option value="secretary">Add as Secretary</option>
-    </select>
-    <button onclick="addNewUser()">Add User</button>
-    <div id="addResult" class="result"></div>
+  </label>
+  <div style="margin:8px 0">
+    <button onclick="testCron()">ทดสอบ Cron (ต้อง Auth)</button>
+    <button onclick="testCronNoAuth()" style="background:#f59e0b;margin-left:8px">ทดสอบ Cron (ไม่ต้อง Auth)</button>
+  </div>
+  <div id="cronResult" class="result"></div>
+</div>
 
-    <h3>Delete User</h3>
-    <label>Select User to Delete:</label>
-    <select id="userSelect" style="width:100%"><option value="">Select user to delete</option></select>
-    <div class="button-group">
-      <button onclick="deleteUser()">Delete User</button>
-      <button class="reload" onclick="loadUsers()">Reload</button>
-    </div>
-    <div id="result5" class="result"></div>
+<div class="card">
+  <h2>จัดการผู้ใช้</h2>
+
+  <h3>ตั้ง User เป็น Boss</h3>
+  <label>LINE User ID ของ Boss:<br>
+    <input id="bossUserId" value="Ue358aad024251165657dfcb85c8755fe" style="width:100%"/>
+  </label>
+  <button onclick="setBoss()">ตั้งเป็น Boss</button>
+  <div id="bossResult" class="result"></div>
+
+  <h3>เพิ่มเลขาใหม่</h3>
+  <label>LINE User ID ของเลขา:<br>
+    <input id="secretaryUserId" placeholder="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+  </label>
+  <label>ชื่อเลขา:<br>
+    <input id="secretaryName" placeholder="เลขานุการ" style="width:100%"/>
+  </label>
+  <button onclick="addSecretary()">เพิ่มเลขา</button>
+  <div id="secretaryResult" class="result"></div>
+
+  <div style="margin:12px 0">
+    <button onclick="listSecretaries()">ดูรายชื่อเลขา</button>
+    <div id="secretaryList" class="result"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>จัดการ Role ผู้ใช้</h2>
+
+  <div style="margin:12px 0">
+    <button onclick="loadAllUsers()">โหลดรายชื่อผู้ใช้ทั้งหมด</button>
+    <div id="usersList" class="result"></div>
   </div>
 
-  <script>
-    window.users = [];
+  <div id="roleManagement" style="display:none;margin-top:16px">
+    <h3>เปลี่ยน Role</h3>
+    <label>เลือกผู้ใช้:<br>
+      <select id="userSelect" style="width:100%;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px">
+        <option value="">-- เลือกผู้ใช้ --</option>
+      </select>
+    </label>
+    <label>เลือก Role:<br>
+      <select id="roleSelect" style="width:100%;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px">
+        <option value="boss">Boss (หัวหน้า)</option>
+        <option value="secretary">Secretary (เลขา)</option>
+      </select>
+    </label>
+    <button onclick="updateUserRole()">อัพเดท Role</button>
+    <button onclick="deleteUser()" style="background:#ef4444;margin-left:8px">ลบผู้ใช้</button>
+    <div id="roleResult" class="result"></div>
+  </div>
+</div>
 
-    function loadUsers() {
-      if (!window.token) {
-        alert('Please set token first');
-        return;
-      }
+<div class="card">
+  <h2>ทดสอบส่งข้อความให้เลขา</h2>
+  <label>ข้อความ:<br>
+    <textarea id="secretaryMessage" rows="3" style="width:100%">ทดสอบข้อความจากหัวหน้า</textarea>
+  </label>
+  <button onclick="testSendToSecretaries()">ส่งข้อความให้เลขาทุกคน</button>
+  <div id="secretaryMsgResult" class="result"></div>
+</div>
 
-      fetch('/admin/users', {
-        headers: { 'Authorization': 'Bearer ' + window.token }
-      })
-      .then(r => r.json())
-      .then(d => {
-        window.users = d.data || [];
-        updateUserGrid();
-        updateUserSelects();
-      })
-      .catch(e => {
-        console.error('Error loading users:', e);
-        alert('Error loading users: ' + e.message);
+<div class="card">
+  <h2>ลิงก์อื่นๆ</h2>
+  <p><a href="/secretary" style="color:#60a5fa">หน้าเลขา</a> - จัดการงาน</p>
+  <p><a href="/calendar" style="color:#60a5fa">ปฏิทินสาธารณะ</a> - ดูตารางงาน</p>
+  <p><a href="/health" style="color:#60a5fa">Health Check</a> - ตรวจสอบสถานะ</p>
+</div>
+
+<script>
+let GLOBAL_TOKEN = '';
+
+async function setGlobalToken(){
+  GLOBAL_TOKEN = document.getElementById('globalToken').value;
+  if(GLOBAL_TOKEN) {
+    document.getElementById('tokenStatus').innerHTML = '✅ Token ตั้งค่าแล้ว';
+    document.getElementById('tokenStatus').style.color = '#10b981';
+
+    // โหลด users อัตโนมัติ
+    await loadAllUsers();
+  } else {
+    document.getElementById('tokenStatus').innerHTML = '❌ กรุณาใส่ Token';
+    document.getElementById('tokenStatus').style.color = '#ef4444';
+  }
+}
+
+function getToken(){
+  if(!GLOBAL_TOKEN) {
+    alert('กรุณาตั้งค่า SEED_ADMIN_TOKEN ก่อน');
+    return null;
+  }
+  return GLOBAL_TOKEN;
+}
+
+async function testSendToBoss(){
+  console.log('testSendToBoss called');
+  const lineUserId = document.getElementById('lineUserId').value;
+  const message = document.getElementById('message').value;
+  const format = document.getElementById('messageFormat').value;
+
+  console.log('Sending request:', { lineUserId, message, format });
+
+  try {
+    const res = await fetch('/test/send-to-boss', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ lineUserId, message, format })
+    });
+
+    console.log('Response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Response data:', result);
+    document.getElementById('sendResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error('Request failed:', error);
+    document.getElementById('sendResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function testCron(){
+  const format = document.getElementById('cronFormat').value;
+  const token = getToken();
+  if(!token) return;
+
+  const res = await fetch('/admin/cron/test?format=' + format + '&force=true', {
+    method: 'POST',
+    headers: {'authorization': 'Bearer ' + token}
+  });
+
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+}
+
+async function testCronNoAuth(){
+  console.log('testCronNoAuth called');
+  const format = document.getElementById('cronFormat').value;
+
+  console.log('Testing cron with format:', format);
+
+  try {
+    const res = await fetch('/test/cron', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ format })
+    });
+
+    console.log('Cron response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Cron response data:', result);
+    document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error('Cron test failed:', error);
+    document.getElementById('cronResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function setBoss(){
+  const token = getToken();
+  if(!token) return;
+  const lineUserId = document.getElementById('bossUserId').value;
+
+  if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
+
+  const res = await fetch('/admin/boss/set', {
+    method: 'POST',
+    headers: {
+      'authorization': 'Bearer ' + token,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ lineUserId })
+  });
+
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('bossResult').textContent = JSON.stringify(result, null, 2);
+}
+
+async function addSecretary(){
+  const token = getToken();
+  if(!token) return;
+  const lineUserId = document.getElementById('secretaryUserId').value;
+  const name = document.getElementById('secretaryName').value;
+
+  if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
+
+  const res = await fetch('/admin/secretary/add', {
+    method: 'POST',
+    headers: {
+      'authorization': 'Bearer ' + token,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ lineUserId, name })
+  });
+
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('secretaryResult').textContent = JSON.stringify(result, null, 2);
+
+  if(res.ok) {
+    document.getElementById('secretaryUserId').value = '';
+    document.getElementById('secretaryName').value = '';
+  }
+}
+
+async function listSecretaries(){
+  const token = getToken();
+  if(!token) return;
+
+  const res = await fetch('/admin/secretaries', {
+    headers: {'authorization': 'Bearer ' + token}
+  });
+
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('secretaryList').textContent = JSON.stringify(result, null, 2);
+}
+
+async function testSendToSecretaries(){
+  const message = document.getElementById('secretaryMessage').value;
+
+  const res = await fetch('/test/send-to-secretaries', {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({ message })
+  });
+
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('secretaryMsgResult').textContent = JSON.stringify(result, null, 2);
+}
+
+let allUsers = [];
+
+async function loadAllUsers(){
+  console.log('loadAllUsers called');
+  const token = getToken();
+  if(!token) return;
+
+  console.log('Loading users with token:', token.substring(0, 10) + '...');
+
+  try {
+    const res = await fetch('/admin/users', {
+      headers: {'authorization': 'Bearer ' + token}
+    });
+
+    console.log('Users response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Users response data:', result);
+
+    if(res.ok && result.data) {
+      allUsers = result.data;
+
+      const usersList = result.data.map(user => {
+        const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
+        const lineId = user.line_user_id || '-';
+        return user.name + ' (' + roleText + ') - LINE: ' + lineId;
+      }).join('\n');
+
+      document.getElementById('usersList').textContent = usersList || 'No users found';
+
+      const userSelect = document.getElementById('userSelect');
+      userSelect.innerHTML = '<option value="">-- Select User --</option>';
+      result.data.forEach(user => {
+        const option = document.createElement('option');
+        option.value = user.id;
+        option.textContent = user.name + ' (' + (user.role === 'boss' ? 'Boss' : 'Secretary') + ')';
+        userSelect.appendChild(option);
       });
+
+      document.getElementById('roleManagement').style.display = 'block';
+    } else {
+      document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
     }
+  } catch (error) {
+    console.error('Load users failed:', error);
+    document.getElementById('usersList').textContent = 'Error: ' + error.message;
+  }
+}
 
-    function updateUserGrid() {
-      const grid = document.getElementById('userGrid');
-      if (window.users.length === 0) {
-        grid.innerHTML = '<p style="color: #9ca3af;">No users found</p>';
-        return;
-      }
+async function updateUserRole(){
+  const token = getToken();
+  if(!token) return;
+  const userId = document.getElementById('userSelect').value;
+  const role = document.getElementById('roleSelect').value;
 
-      grid.innerHTML = window.users.map(u =>
-        `<div class="user-item ${u.role}">
-          <strong>${u.name}</strong>
-          <span>${u.role}</span>
-          <small>${u.line_user_id || 'No LINE ID'}</small>
-        </div>`
-      ).join('');
-    }
+  if(!userId) return alert('กรุณาเลือกผู้ใช้');
 
-    function updateUserSelects() {
-      ['userSelect', 'userManageSelect'].forEach(id => {
-        const select = document.getElementById(id);
-        select.innerHTML = '<option value="">Select user</option>';
-        window.users.forEach(u => {
-          const opt = document.createElement('option');
-          opt.value = u.id;
-          opt.textContent = u.name + ' (' + u.role + ') - ID: ' + u.id.substring(0, 8) + '...';
-          select.appendChild(opt);
-        });
-      });
-    }
+  const res = await fetch('/admin/user/role', {
+    method: 'PATCH',
+    headers: {
+      'authorization': 'Bearer ' + token,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ userId, role })
+  });
 
-    function manageUser() {
-      const userId = document.getElementById('userManageSelect').value;
-      const role = document.getElementById('roleSelect').value;
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
 
-      if (!userId) {
-        alert('Select user');
-        return;
-      }
+  if(res.ok) {
+    loadAllUsers();
+  }
+}
 
-      if (!window.token) {
-        alert('Please set token first');
-        return;
-      }
+async function deleteUser(){
+  const token = getToken();
+  if(!token) return;
+  const userId = document.getElementById('userSelect').value;
 
-      fetch('/admin/user/role', {
-        method: 'PATCH',
-        headers: {
-          'Authorization': 'Bearer ' + window.token,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({ userId, role })
-      })
-      .then(r => r.json())
-      .then(d => {
-        document.getElementById('result4').textContent = JSON.stringify(d, null, 2);
-        loadUsers();
-      })
-      .catch(e => {
-        document.getElementById('result4').textContent = 'Error: ' + e.message;
-      });
-    }
+  if(!userId) return alert('กรุณาเลือกผู้ใช้');
 
-    function addNewUser() {
-      const lineUserId = document.getElementById('lineIdSelect').value;
-      const name = document.getElementById('newName').value || 'User';
-      const role = document.getElementById('newRoleSelect').value;
+  const selectedUser = allUsers.find(u => u.id === userId);
+  if(!confirm('ต้องการลบผู้ใช้ "' + (selectedUser?.name || 'Unknown') + '" หรือไม่?')) return;
 
-      if (!lineUserId) {
-        alert('Select LINE ID');
-        return;
-      }
+  const res = await fetch('/admin/user/delete', {
+    method: 'DELETE',
+    headers: {
+      'authorization': 'Bearer ' + token,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ userId })
+  });
 
-      if (!window.token) {
-        alert('Please set token first');
-        return;
-      }
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
 
-      const endpoint = role === 'boss' ? '/admin/boss/set' : '/admin/secretary/add';
-      const body = role === 'boss' ? { lineUserId } : { lineUserId, name };
+  if(res.ok) {
+    document.getElementById('userSelect').selectedIndex = 0;
+    loadAllUsers();
+  }
+}
 
-      fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + window.token,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      })
-      .then(r => r.json())
-      .then(d => {
-        document.getElementById('addResult').textContent = JSON.stringify(d, null, 2);
-        loadUsers();
-      })
-      .catch(e => {
-        document.getElementById('addResult').textContent = 'Error: ' + e.message;
-      });
-    }
-
-    function deleteUser() {
-      const userId = document.getElementById('userSelect').value;
-
-      if (!userId) {
-        alert('Select user');
-        return;
-      }
-
-      if (!confirm('Delete user?')) {
-        return;
-      }
-
-      if (!window.token) {
-        alert('Please set token first');
-        return;
-      }
-
-      fetch('/admin/user/delete', {
-        method: 'DELETE',
-        headers: {
-          'Authorization': 'Bearer ' + window.token,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({ userId })
-      })
-      .then(r => r.json())
-      .then(d => {
-        document.getElementById('result5').textContent = JSON.stringify(d, null, 2);
-        loadUsers();
-      })
-      .catch(e => {
-        document.getElementById('result5').textContent = 'Error: ' + e.message;
-      });
-    }
-  </script>
-</body>
-</html>
+</script>
+</body></html>
