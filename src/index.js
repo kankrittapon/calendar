@@ -825,19 +825,19 @@ async function loadAllUsers(){
       allUsers = result.data;
       
       const usersList = result.data.map(user => {
-        const roleText = user.role === 'boss' ? 'หัวหน้า' : 'เลขา';
+        const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
         const lineId = user.line_user_id || '-';
         return user.name + ' (' + roleText + ') - LINE: ' + lineId;
       }).join('\n');
       
-      document.getElementById('usersList').textContent = usersList || 'ไม่มีผู้ใช้';
+      document.getElementById('usersList').textContent = usersList || 'No users found';
       
       const userSelect = document.getElementById('userSelect');
-      userSelect.innerHTML = '<option value="">-- เลือกผู้ใช้ --</option>';
+      userSelect.innerHTML = '<option value="">-- Select User --</option>';
       result.data.forEach(user => {
         const option = document.createElement('option');
         option.value = user.id;
-        option.textContent = user.name + ' (' + (user.role === 'boss' ? 'หัวหน้า' : 'เลขา') + ')';
+        option.textContent = user.name + ' (' + (user.role === 'boss' ? 'Boss' : 'Secretary') + ')';
         userSelect.appendChild(option);
       });
       
