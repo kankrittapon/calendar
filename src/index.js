@@ -135,6 +135,55 @@ export default {
         return json({ ok: true, data: secretaries.results || [] });
       }
       
+      // ดูรายชื่อ users ทั้งหมด
+      if (pathname === "/admin/users" && method === "GET") {
+        await assertAdminSeedAuth(env, request.headers.get("authorization"));
+        const users = await env.schedule_db
+          .prepare("SELECT id, name, line_user_id, role, created_at FROM users ORDER BY created_at DESC")
+          .all();
+        return json({ ok: true, data: users.results || [] });
+      }
+      
+      // อัพเดท role ของ user
+      if (pathname === "/admin/user/role" && method === "PATCH") {
+        await assertAdminSeedAuth(env, request.headers.get("authorization"));
+        const body = await safeJson(request);
+        const { userId, role } = body;
+        if (!userId || !role) return json({ ok: false, error: "userId and role required" }, 400);
+        if (!['boss', 'secretary'].includes(role)) return json({ ok: false, error: "role must be boss or secretary" }, 400);
+        
+        const now = new Date().toISOString();
+        const result = await env.schedule_db
+          .prepare("UPDATE users SET role = ?, updated_at = ? WHERE id = ?")
+          .bind(role, now, userId)
+          .run();
+          
+        if (result.meta.changes === 0) {
+          return json({ ok: false, error: "User not found" }, 404);
+        }
+        
+        return json({ ok: true, message: "Role updated successfully" });
+      }
+      
+      // ลบ user
+      if (pathname === "/admin/user/delete" && method === "DELETE") {
+        await assertAdminSeedAuth(env, request.headers.get("authorization"));
+        const body = await safeJson(request);
+        const { userId } = body;
+        if (!userId) return json({ ok: false, error: "userId required" }, 400);
+        
+        const result = await env.schedule_db
+          .prepare("DELETE FROM users WHERE id = ?")
+          .bind(userId)
+          .run();
+          
+        if (result.meta.changes === 0) {
+          return json({ ok: false, error: "User not found" }, 404);
+        }
+        
+        return json({ ok: true, message: "User deleted successfully" });
+      }
+      
 
 
       // Manual cron trigger (ทดสอบสรุปทันที: ?format=text|flex&force=true)
@@ -412,8 +461,21 @@ export default {
 
   async scheduled(event, env, ctx) {
     try {
-      const format = (env.AGENDA_FORMAT || "text").toLowerCase(); // "text" | "flex"
-      await sendDailyAgendaToBoss(env, { format });
+      const format = (env.AGENDA_FORMAT || "flex").toLowerCase(); // "text" | "flex"
+      
+      // วันที่ไทย (UTC+7)
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+      const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
+      const hour = bangkok.getHours();
+      
+      if (hour === 8) {
+        // 08:30 - สรุปงานวันนี้
+        await sendDailyAgendaToBoss(env, { format, type: 'today' });
+      } else if (hour === 20) {
+        // 20:00 - สรุปงานพรุ่งนี้
+        await sendDailyAgendaToBoss(env, { format, type: 'tomorrow' });
+      }
     } catch (e) {
       console.error("CRON ERROR:", e?.message, e?.stack);
     }
@@ -497,6 +559,36 @@ button{background:#16a34a;color:#fff;cursor:pointer}
   <div style="margin:12px 0">
     <button onclick="listSecretaries()">ดูรายชื่อเลขา</button>
     <div id="secretaryList" class="result"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>จัดการ Role ผู้ใช้</h2>
+  <label>SEED_ADMIN_TOKEN:<br>
+    <input id="roleAdminToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:100%"/>
+  </label>
+  
+  <div style="margin:12px 0">
+    <button onclick="loadAllUsers()">โหลดรายชื่อผู้ใช้ทั้งหมด</button>
+    <div id="usersList" class="result"></div>
+  </div>
+  
+  <div id="roleManagement" style="display:none;margin-top:16px">
+    <h3>เปลี่ยน Role</h3>
+    <label>เลือกผู้ใช้:<br>
+      <select id="userSelect" style="width:100%;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px">
+        <option value="">-- เลือกผู้ใช้ --</option>
+      </select>
+    </label>
+    <label>เลือก Role:<br>
+      <select id="roleSelect" style="width:100%;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px">
+        <option value="boss">Boss (หัวหน้า)</option>
+        <option value="secretary">Secretary (เลขา)</option>
+      </select>
+    </label>
+    <button onclick="updateUserRole()">อัพเดท Role</button>
+    <button onclick="deleteUser()" style="background:#ef4444;margin-left:8px">ลบผู้ใช้</button>
+    <div id="roleResult" class="result"></div>
   </div>
 </div>
 
@@ -619,6 +711,101 @@ async function testSendToSecretaries(){
   document.getElementById('secretaryMsgResult').textContent = JSON.stringify(result, null, 2);
 }
 
+let allUsers = [];
+
+async function loadAllUsers(){
+  const adminToken = document.getElementById('roleAdminToken').value;
+  
+  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
+  
+  const res = await fetch('/admin/users', {
+    headers: {'authorization': 'Bearer ' + adminToken}
+  });
+  
+  const result = await res.json().catch(() => ({}));
+  
+  if(res.ok && result.data) {
+    allUsers = result.data;
+    
+    // แสดงรายการ
+    const usersList = result.data.map(user => {
+      const roleText = user.role === 'boss' ? 'หัวหน้า' : 'เลขา';
+      const lineId = user.line_user_id || '-';
+      return `${user.name} (${roleText}) - LINE: ${lineId}`;
+    }).join('\n');
+    
+    document.getElementById('usersList').textContent = usersList || 'ไม่มีผู้ใช้';
+    
+    // เติม dropdown
+    const userSelect = document.getElementById('userSelect');
+    userSelect.innerHTML = '<option value="">-- เลือกผู้ใช้ --</option>';
+    result.data.forEach(user => {
+      const option = document.createElement('option');
+      option.value = user.id;
+      option.textContent = `${user.name} (${user.role === 'boss' ? 'หัวหน้า' : 'เลขา'})`;
+      userSelect.appendChild(option);
+    });
+    
+    document.getElementById('roleManagement').style.display = 'block';
+  } else {
+    document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
+  }
+}
+
+async function updateUserRole(){
+  const adminToken = document.getElementById('roleAdminToken').value;
+  const userId = document.getElementById('userSelect').value;
+  const role = document.getElementById('roleSelect').value;
+  
+  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
+  if(!userId) return alert('กรุณาเลือกผู้ใช้');
+  
+  const res = await fetch('/admin/user/role', {
+    method: 'PATCH',
+    headers: {
+      'authorization': 'Bearer ' + adminToken,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ userId, role })
+  });
+  
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
+  
+  if(res.ok) {
+    // รีเฟรชรายการ
+    loadAllUsers();
+  }
+}
+
+async function deleteUser(){
+  const adminToken = document.getElementById('roleAdminToken').value;
+  const userId = document.getElementById('userSelect').value;
+  
+  if(!adminToken) return alert('กรุณาใส่ SEED_ADMIN_TOKEN');
+  if(!userId) return alert('กรุณาเลือกผู้ใช้');
+  
+  const selectedUser = allUsers.find(u => u.id === userId);
+  if(!confirm(`ต้องการลบผู้ใช้ "${selectedUser?.name}" หรือไม่?`)) return;
+  
+  const res = await fetch('/admin/user/delete', {
+    method: 'DELETE',
+    headers: {
+      'authorization': 'Bearer ' + adminToken,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ userId })
+  });
+  
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('roleResult').textContent = JSON.stringify(result, null, 2);
+  
+  if(res.ok) {
+    // รีเฟรชรายการ
+    document.getElementById('userSelect').selectedIndex = 0;
+    loadAllUsers();
+  }
+}
 
 </script>
 </body></html>`;
@@ -710,7 +897,13 @@ async function render(){
       const list = await fetchRange(fmt(start), fmt(end));
       const by = groupByDay(list);
       viewEl.className='week';
-      let html = '<div class="week"><div class="row">';
+      const dayHeaders = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+      let html = '<div class="week">';
+      html += '<div class="row" style="background:#1e293b;border-radius:8px 8px 0 0">';
+      dayHeaders.forEach(dayName => {
+        html += '<div style="padding:8px;text-align:center;font-weight:bold;color:#cbd5e1;font-size:14px">'+dayName+'</div>';
+      });
+      html += '</div><div class="row">';
       for(let i=0;i<7;i++){
         const d = fmt(addDays(start,i));
         const items = by[d]||[];
@@ -736,6 +929,14 @@ async function render(){
       
       let dayCount = 1;
       const weeks = Math.ceil((daysInMonth + startDay) / 7);
+      
+      // หัวตาราง
+      const dayHeaders = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+      html += '<div class="row" style="background:#1e293b;border-radius:8px 8px 0 0">';
+      dayHeaders.forEach(dayName => {
+        html += '<div style="padding:8px;text-align:center;font-weight:bold;color:#cbd5e1;font-size:14px">'+dayName+'</div>';
+      });
+      html += '</div>';
       
       for(let week = 0; week < weeks; week++){
         html+='<div class="row">';
@@ -879,12 +1080,26 @@ document.addEventListener('DOMContentLoaded', function(){
 /* =========================
  * Cron helpers
  * ========================= */
-async function sendDailyAgendaToBoss(env, { format = "text", force = false } = {}) {
+async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type = "today" } = {}) {
   // วันที่ไทย (UTC+7)
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
   const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
-  const today = `${bangkok.getFullYear()}-${String(bangkok.getMonth()+1).padStart(2,"0")}-${String(bangkok.getDate()).padStart(2,"0")}`;
+  
+  let targetDate, dateForQuery;
+  if (type === "tomorrow") {
+    const tomorrow = new Date(bangkok);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    targetDate = tomorrow;
+    dateForQuery = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,"0")}-${String(tomorrow.getDate()).padStart(2,"0")}`;
+  } else {
+    targetDate = bangkok;
+    dateForQuery = `${bangkok.getFullYear()}-${String(bangkok.getMonth()+1).padStart(2,"0")}-${String(bangkok.getDate()).padStart(2,"0")}`;
+  }
+  
+  // ตรวจสอบวันเสาร์-อาทิตย์ (0=อาทิตย์, 6=เสาร์)
+  const dayOfWeek = targetDate.getDay();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
   // boss ที่ผูก line_user_id
   const bosses = await env.schedule_db
@@ -895,34 +1110,43 @@ async function sendDailyAgendaToBoss(env, { format = "text", force = false } = {
     return;
   }
 
-  // งานวันนี้
+  // งานของวันที่กำหนด
   const schedules = await env.schedule_db
     .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,attend_status
               FROM schedules
               WHERE date = ? AND (status IS NULL OR status IN ('planned','in_progress'))
               ORDER BY time(start_time) ASC`)
-    .bind(today)
+    .bind(dateForQuery)
     .all();
 
   const items = schedules?.results || [];
+  
+  // ถ้าเป็นวันเสาร์-อาทิตย์ และไม่มีงาน ไม่ต้องแจ้งเตือน
+  if (isWeekend && items.length === 0) {
+    console.log(`[cron] Skip weekend notification - no tasks on ${dateForQuery}`);
+    return;
+  }
+  
+  const dayText = type === "tomorrow" ? "พรุ่งนี้" : "วันนี้";
   const asText = items.length
-    ? buildAgendaText(today, items)
-    : `สรุปงานประจำวันที่ ${today}\n— วันนี้ยังไม่มีงานที่ต้องทำ —`;
+    ? buildAgendaText(dateForQuery, items, dayText)
+    : `สรุปงานประจำวัน${dayText} (${dateForQuery})\n— ${dayText}ไม่มีงานที่ต้องทำ —`;
 
   for (const b of bosses.results) {
     const target = b.line_user_id;
 
-    // กันส่งซ้ำในวันเดียวกัน (daily) - ยกเว้นถ้าเป็น force mode
+    // กันส่งซ้ำในวันเดียวกัน - ยกเว้นถ้าเป็น force mode
     if (!force) {
+      const notificationType = type === "tomorrow" ? "tomorrow" : "daily";
       const already = await env.schedule_db
-        .prepare("SELECT 1 FROM notifications_sent WHERE type='daily' AND target=? AND date(sent_at) = date('now','localtime') LIMIT 1")
-        .bind(target)
+        .prepare("SELECT 1 FROM notifications_sent WHERE type=? AND target=? AND date(sent_at) = date('now','localtime') LIMIT 1")
+        .bind(notificationType, target)
         .first();
-      if (already) { console.log("[cron] skip duplicate", target); continue; }
+      if (already) { console.log(`[cron] skip duplicate ${notificationType}`, target); continue; }
     }
 
     if (format === "flex" && items.length) {
-      const bubble = buildAgendaFlex(today, items);
+      const bubble = buildAgendaFlex(dateForQuery, items, dayText);
       await pushLineFlex(env, target, bubble);
     } else {
       await pushLineText(env, target, asText);
@@ -931,16 +1155,17 @@ async function sendDailyAgendaToBoss(env, { format = "text", force = false } = {
     // บันทึกล็อกการส่ง - ยกเว้นถ้าเป็น force mode
     if (!force) {
       const nid = crypto.randomUUID();
+      const notificationType = type === "tomorrow" ? "tomorrow" : "daily";
       await env.schedule_db
         .prepare("INSERT INTO notifications_sent (id, schedule_id, type, target, sent_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))")
-        .bind(nid, "-", "daily", target)
+        .bind(nid, "-", notificationType, target)
         .run();
     }
   }
 }
 
-function buildAgendaText(dateStr, items) {
-  const lines = ['สรุปงานประจำวันที่ ' + dateStr];
+function buildAgendaText(dateStr, items, dayText = "วันนี้") {
+  const lines = [`สรุปงานประจำวัน${dayText} (${dateStr})`];
   let i = 1;
   for (const s of items) {
     const time = s.start_time;
@@ -952,7 +1177,7 @@ function buildAgendaText(dateStr, items) {
   return lines.join('\n');
 }
 
-function buildAgendaFlex(dateStr, items) {
+function buildAgendaFlex(dateStr, items, dayText = "วันนี้") {
   // แปลงวันที่เป็นรูปแบบไทย
   const date = new Date(dateStr);
   const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
@@ -997,10 +1222,10 @@ function buildAgendaFlex(dateStr, items) {
       body: {
         type: "box", layout: "vertical", backgroundColor: "#0f172a", paddingAll: "20px",
         contents: [
-          { type: "text", text: "📅 ตารางงานประจำวัน", weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
+          { type: "text", text: `📅 ตารางงานประจำวัน${dayText}`, weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
           { type: "text", text: thaiDateStr, size: "sm", color: "#94a3b8", align: "center", margin: "sm" },
           { type: "separator", margin: "lg", color: "#334155" },
-          { type: "text", text: "ไม่มีงานในวันนี้", size: "md", color: "#64748b", align: "center", margin: "xl" }
+          { type: "text", text: `ไม่มีงานใน${dayText}`, size: "md", color: "#64748b", align: "center", margin: "xl" }
         ]
       }
     };
