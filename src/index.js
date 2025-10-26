@@ -73,29 +73,10 @@ export default {
         });
       }
 
-      // หน้าทดสอบส่งข้อมูลให้ boss
+      // หน้าทดสอบ (ใช้ HTML สะอาด)
       if (pathname === "/test" && method === "GET") {
         console.log("Test page accessed");
-        const html = renderTestPage();
-        return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
-      }
-      
-      // หน้าทดสอบแยก (ไฟล์ HTML สะอาด)
-      if (pathname === "/test.html" && method === "GET") {
-        console.log("Clean test page accessed");
-        const html = await env.ASSETS.fetch(request).then(res => res.text()).catch(() => null);
-        if (html) return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
-        
-        // Fallback: serve from file system
-        try {
-          const fs = require('fs');
-          const path = require('path');
-          const filePath = path.join(__dirname, '..', 'test.html');
-          const fileContent = fs.readFileSync(filePath, 'utf8');
-          return new Response(fileContent, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
-        } catch (e) {
-          return new Response('Test file not found', { status: 404 });
-        }
+        return new Response(renderCleanTestPage(), { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
       }
 
       /* ======= Public APIs (อ่านอย่างเดียว ไม่ต้อง auth) ======= */
@@ -536,6 +517,195 @@ export default {
 /* =========================
  * Calendar (Public HTML)
  * ========================= */
+function renderCleanTestPage() {
+  return `<!doctype html>
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Test Schedule Worker</title>
+<style>
+body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
+.card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
+input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+button{background:#16a34a;color:#fff;cursor:pointer}
+.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap}
+.global-token{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
+</style></head>
+<body>
+<h1>Test Schedule Worker</h1>
+
+<div class="global-token">
+  <h2>Set Token</h2>
+  <input id="globalToken" type="password" placeholder="SEED_ADMIN_TOKEN" style="width:300px"/>
+  <button onclick="setGlobalToken()">Set Token</button>
+  <div id="tokenStatus" style="margin-top:8px;font-size:14px"></div>
+</div>
+
+<div class="card">
+  <h2>Test Send to Boss</h2>
+  <input id="lineUserId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+  <select id="messageFormat">
+    <option value="text">Text Message</option>
+    <option value="flex">Flex Message</option>
+  </select>
+  <textarea id="message" rows="3" style="width:100%">Test message from worker</textarea>
+  <button onclick="testSendToBoss()">Send Test Message</button>
+  <div id="sendResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>Test Cron Job</h2>
+  <select id="cronFormat">
+    <option value="text">Text</option>
+    <option value="flex">Flex Message</option>
+  </select>
+  <div style="margin:8px 0">
+    <button onclick="testCronNoAuth()">Test Cron (No Auth)</button>
+    <button onclick="testCron()" style="margin-left:8px">Test Cron (With Auth)</button>
+  </div>
+  <div id="cronResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>User Management</h2>
+  <button onclick="loadAllUsers()">Load All Users</button>
+  <div id="usersList" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>Test Send to Secretaries</h2>
+  <textarea id="secretaryMessage" rows="3" style="width:100%">Test message to secretaries</textarea>
+  <button onclick="testSendToSecretaries()">Send to All Secretaries</button>
+  <div id="secretaryMsgResult" class="result"></div>
+</div>
+
+<script>
+let GLOBAL_TOKEN = '';
+
+function setGlobalToken(){
+  GLOBAL_TOKEN = document.getElementById('globalToken').value;
+  if(GLOBAL_TOKEN) {
+    document.getElementById('tokenStatus').innerHTML = 'Token Set Successfully';
+    document.getElementById('tokenStatus').style.color = '#10b981';
+    loadAllUsers();
+  } else {
+    document.getElementById('tokenStatus').innerHTML = 'Please enter token';
+    document.getElementById('tokenStatus').style.color = '#ef4444';
+  }
+}
+
+function getToken(){
+  if(!GLOBAL_TOKEN) {
+    alert('Please set SEED_ADMIN_TOKEN first');
+    return null;
+  }
+  return GLOBAL_TOKEN;
+}
+
+async function testSendToBoss(){
+  console.log('testSendToBoss called');
+  const lineUserId = document.getElementById('lineUserId').value;
+  const message = document.getElementById('message').value;
+  const format = document.getElementById('messageFormat').value;
+  
+  try {
+    const res = await fetch('/test/send-to-boss', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ lineUserId, message, format })
+    });
+    
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
+    document.getElementById('sendResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    document.getElementById('sendResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function testCronNoAuth(){
+  console.log('testCronNoAuth called');
+  const format = document.getElementById('cronFormat').value;
+  
+  try {
+    const res = await fetch('/test/cron', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ format })
+    });
+    
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
+    document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    document.getElementById('cronResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function testCron(){
+  const token = getToken();
+  if(!token) return;
+  const format = document.getElementById('cronFormat').value;
+  
+  try {
+    const res = await fetch('/admin/cron/test?format=' + format + '&force=true', {
+      method: 'POST',
+      headers: {'authorization': 'Bearer ' + token}
+    });
+    
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
+    document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    document.getElementById('cronResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function loadAllUsers(){
+  console.log('loadAllUsers called');
+  const token = getToken();
+  if(!token) return;
+  
+  try {
+    const res = await fetch('/admin/users', {
+      headers: {'authorization': 'Bearer ' + token}
+    });
+    
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
+    
+    if(res.ok && result.data) {
+      const usersList = result.data.map(user => {
+        const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
+        const lineId = user.line_user_id || '-';
+        return user.name + ' (' + roleText + ') - LINE: ' + lineId;
+      }).join('\n');
+      
+      document.getElementById('usersList').textContent = usersList || 'No users found';
+    } else {
+      document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
+    }
+  } catch (error) {
+    document.getElementById('usersList').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function testSendToSecretaries(){
+  const message = document.getElementById('secretaryMessage').value;
+  
+  try {
+    const res = await fetch('/test/send-to-secretaries', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ message })
+    });
+    
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON' }));
+    document.getElementById('secretaryMsgResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    document.getElementById('secretaryMsgResult').textContent = 'Error: ' + error.message;
+  }
+}
+</script>
+</body></html>`;
+}
+
 function renderTestPage() {
   return `<!doctype html>
 <html lang="th"><head>
