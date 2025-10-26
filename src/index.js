@@ -76,7 +76,49 @@ export default {
       // หน้าทดสอบ (ใช้ HTML สะอาด)
       if (pathname === "/test" && method === "GET") {
         console.log("Test page accessed");
-        return new Response(renderTestHTML(), { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+        const html = `<!doctype html>
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Test Console</title>
+<style>
+body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
+.card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
+input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+button{background:#16a34a;color:#fff;cursor:pointer;border:none}
+.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap;font-family:monospace}
+</style></head>
+<body>
+<h1>Test Console</h1>
+
+<div class="card">
+  <h2>Admin Token</h2>
+  <input id="token" type="password" placeholder="SEED_ADMIN_TOKEN" style="width:300px"/>
+  <button onclick="window.token=document.getElementById('token').value;alert('Token set')">Set Token</button>
+</div>
+
+<div class="card">
+  <h2>Test Send Message</h2>
+  <input id="userId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+  <textarea id="msg" rows="3" style="width:100%">Test message</textarea>
+  <button onclick="fetch('/test/send-to-boss',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({lineUserId:document.getElementById('userId').value,message:document.getElementById('msg').value,format:'text'})}).then(r=>r.json()).then(d=>document.getElementById('result1').textContent=JSON.stringify(d,null,2))">Send</button>
+  <div id="result1" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>Test Cron</h2>
+  <button onclick="fetch('/test/cron',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format:'text'})}).then(r=>r.json()).then(d=>document.getElementById('result2').textContent=JSON.stringify(d,null,2))">Test Cron</button>
+  <div id="result2" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>Load Users</h2>
+  <button onclick="fetch('/admin/users',{headers:{'authorization':'Bearer '+window.token}}).then(r=>r.json()).then(d=>document.getElementById('result3').textContent=JSON.stringify(d,null,2))">Load Users</button>
+  <div id="result3" class="result"></div>
+</div>
+
+</body></html>`;
+        return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
       }
 
       /* ======= Public APIs (อ่านอย่างเดียว ไม่ต้อง auth) ======= */
