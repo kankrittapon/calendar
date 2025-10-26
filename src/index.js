@@ -79,6 +79,24 @@ export default {
         const html = renderTestPage();
         return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
       }
+      
+      // หน้าทดสอบแยก (ไฟล์ HTML สะอาด)
+      if (pathname === "/test.html" && method === "GET") {
+        console.log("Clean test page accessed");
+        const html = await env.ASSETS.fetch(request).then(res => res.text()).catch(() => null);
+        if (html) return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+        
+        // Fallback: serve from file system
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const filePath = path.join(__dirname, '..', 'test.html');
+          const fileContent = fs.readFileSync(filePath, 'utf8');
+          return new Response(fileContent, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+        } catch (e) {
+          return new Response('Test file not found', { status: 404 });
+        }
+      }
 
       /* ======= Public APIs (อ่านอย่างเดียว ไม่ต้อง auth) ======= */
       // ช่วงวันที่สำหรับหน้า calendar: /public/schedules?start=YYYY-MM-DD&end=YYYY-MM-DD

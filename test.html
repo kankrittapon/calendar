@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="th"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Test Page</title>
+<style>
+body{font-family:system-ui;margin:24px;background:#0b0e17;color:#e5e7eb}
+.card{background:#141927;border-radius:12px;padding:16px;margin-bottom:16px}
+input,textarea,button{font:inherit;padding:8px;margin:4px 0;background:#1f2937;color:#e5e7eb;border:1px solid #374151;border-radius:6px}
+button{background:#16a34a;color:#fff;cursor:pointer}
+.result{background:#0f1422;padding:12px;border-radius:8px;margin-top:8px;white-space:pre-wrap}
+.global-token{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
+</style></head>
+<body>
+<h1>Test Schedule Worker</h1>
+
+<div class="global-token">
+  <h2>Set Token</h2>
+  <input id="globalToken" type="password" placeholder="SEED_ADMIN_TOKEN" style="width:300px"/>
+  <button onclick="setGlobalToken()">Set Token</button>
+  <div id="tokenStatus" style="margin-top:8px;font-size:14px"></div>
+</div>
+
+<div class="card">
+  <h2>Test Send to Boss</h2>
+  <input id="lineUserId" value="U1234567890abcdef1234567890abcdef" style="width:100%"/>
+  <select id="messageFormat">
+    <option value="text">Text Message</option>
+    <option value="flex">Flex Message</option>
+  </select>
+  <textarea id="message" rows="3" style="width:100%">Test message</textarea>
+  <button onclick="testSendToBoss()">Send Test Message</button>
+  <div id="sendResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>Test Cron</h2>
+  <select id="cronFormat">
+    <option value="text">Text</option>
+    <option value="flex">Flex Message</option>
+  </select>
+  <button onclick="testCronNoAuth()">Test Cron (No Auth)</button>
+  <div id="cronResult" class="result"></div>
+</div>
+
+<div class="card">
+  <h2>Load Users</h2>
+  <button onclick="loadAllUsers()">Load All Users</button>
+  <div id="usersList" class="result"></div>
+</div>
+
+<script>
+let GLOBAL_TOKEN = '';
+
+function setGlobalToken(){
+  GLOBAL_TOKEN = document.getElementById('globalToken').value;
+  if(GLOBAL_TOKEN) {
+    document.getElementById('tokenStatus').innerHTML = 'Token Set';
+    document.getElementById('tokenStatus').style.color = '#10b981';
+  } else {
+    document.getElementById('tokenStatus').innerHTML = 'Please enter token';
+    document.getElementById('tokenStatus').style.color = '#ef4444';
+  }
+}
+
+function getToken(){
+  if(!GLOBAL_TOKEN) {
+    alert('Please set SEED_ADMIN_TOKEN first');
+    return null;
+  }
+  return GLOBAL_TOKEN;
+}
+
+async function testSendToBoss(){
+  console.log('testSendToBoss called');
+  const lineUserId = document.getElementById('lineUserId').value;
+  const message = document.getElementById('message').value;
+  const format = document.getElementById('messageFormat').value;
+  
+  console.log('Sending request:', { lineUserId, message, format });
+  
+  try {
+    const res = await fetch('/test/send-to-boss', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ lineUserId, message, format })
+    });
+    
+    console.log('Response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Response data:', result);
+    document.getElementById('sendResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error('Request failed:', error);
+    document.getElementById('sendResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function testCronNoAuth(){
+  console.log('testCronNoAuth called');
+  const format = document.getElementById('cronFormat').value;
+  
+  console.log('Testing cron with format:', format);
+  
+  try {
+    const res = await fetch('/test/cron', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ format })
+    });
+    
+    console.log('Cron response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Cron response data:', result);
+    document.getElementById('cronResult').textContent = JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error('Cron test failed:', error);
+    document.getElementById('cronResult').textContent = 'Error: ' + error.message;
+  }
+}
+
+async function loadAllUsers(){
+  console.log('loadAllUsers called');
+  const token = getToken();
+  if(!token) return;
+  
+  console.log('Loading users with token:', token.substring(0, 10) + '...');
+  
+  try {
+    const res = await fetch('/admin/users', {
+      headers: {'authorization': 'Bearer ' + token}
+    });
+    
+    console.log('Users response status:', res.status);
+    const result = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+    console.log('Users response data:', result);
+    
+    if(res.ok && result.data) {
+      const usersList = result.data.map(user => {
+        const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
+        const lineId = user.line_user_id || '-';
+        return user.name + ' (' + roleText + ') - LINE: ' + lineId;
+      }).join('\n');
+      
+      document.getElementById('usersList').textContent = usersList || 'No users found';
+    } else {
+      document.getElementById('usersList').textContent = JSON.stringify(result, null, 2);
+    }
+  } catch (error) {
+    console.error('Load users failed:', error);
+    document.getElementById('usersList').textContent = 'Error: ' + error.message;
+  }
+}
+</script>
+</body></html>
