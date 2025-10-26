@@ -2,7 +2,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "schedule-worker",
 	"main": "src/index.js",
-	"compatibility_date": "2025-10-11",
+	"compatibility_date": "2025-01-15",
 	"account_id": "e58b2913deacac47b7350d298394cf82",
 	"observability": {
 		"enabled": true

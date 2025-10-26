@@ -12,8 +12,14 @@ export default {
     const { pathname } = url;
     const method = request.method.toUpperCase();
 
+    // เพิ่ม log เพื่อ debug
+    console.log(`[${new Date().toISOString()}] ${method} ${pathname}`);
+
     try {
-      if (pathname === "/health") return json({ ok: true });
+      if (pathname === "/health") {
+        console.log("Health check accessed");
+        return json({ ok: true });
+      }
 
       /* ===== Secretary APIs (ต้องมี api_key ของ role=secretary) ===== */
       if (pathname === "/schedules" && method === "POST") {
@@ -69,6 +75,7 @@ export default {
 
       // หน้าทดสอบส่งข้อมูลให้ boss
       if (pathname === "/test" && method === "GET") {
+        console.log("Test page accessed");
         const html = renderTestPage();
         return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
       }
@@ -137,10 +144,12 @@ export default {
       
       // ดูรายชื่อ users ทั้งหมด
       if (pathname === "/admin/users" && method === "GET") {
+        console.log("Admin users list called");
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
         const users = await env.schedule_db
           .prepare("SELECT id, name, line_user_id, role, created_at FROM users ORDER BY created_at DESC")
           .all();
+        console.log(`Found ${users.results?.length || 0} users`);
         return json({ ok: true, data: users.results || [] });
       }
       
@@ -188,19 +197,25 @@ export default {
 
       // Manual cron trigger (ทดสอบสรุปทันที: ?format=text|flex&force=true)
       if (pathname === "/admin/cron/test" && method === "POST") {
+        console.log("Manual cron test called");
         await assertAdminSeedAuth(env, request.headers.get("authorization"));
         const fmt = (new URL(request.url).searchParams.get("format") || env.AGENDA_FORMAT || "text").toLowerCase();
         const force = new URL(request.url).searchParams.get("force") === "true";
+        console.log(`Running cron test with format: ${fmt}, force: ${force}`);
         await sendDailyAgendaToBoss(env, { format: fmt, force });
+        console.log("Cron test completed");
         return json({ ok: true, ran: "sendDailyAgendaToBoss", format: fmt, force });
       }
 
       // ทดสอบส่งข้อมูลให้ boss (ไม่ต้อง auth)
       if (pathname === "/test/send-to-boss" && method === "POST") {
+        console.log("Test send-to-boss called");
         const body = await safeJson(request);
+        console.log("Request body:", body);
         const message = body.message || "ทดสอบส่งข้อมูลจาก Worker";
         const lineUserId = body.lineUserId || "U1234567890abcdef1234567890abcdef";
         const format = body.format || "text";
+        console.log(`Sending ${format} message to ${lineUserId}:`, message);
         
         if (env.LINE_CHANNEL_ACCESS_TOKEN) {
           if (format === "flex") {
@@ -224,8 +239,11 @@ export default {
       
       // ทดสอบส่งข้อความให้เลขา
       if (pathname === "/test/send-to-secretaries" && method === "POST") {
+        console.log("Test send-to-secretaries called");
         const body = await safeJson(request);
+        console.log("Request body:", body);
         const message = body.message || "ทดสอบข้อความจากหัวหน้า";
+        console.log("Message to send:", message);
         
         if (env.LINE_CHANNEL_ACCESS_TOKEN) {
           const sentCount = await sendMessageToAllSecretaries(env, message);
@@ -460,6 +478,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    console.log("[CRON] Scheduled function triggered at:", new Date().toISOString());
     try {
       const format = (env.AGENDA_FORMAT || "flex").toLowerCase();
       
@@ -468,10 +487,16 @@ export default {
       const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
       const hour = bangkok.getHours();
       
+      console.log(`[CRON] Bangkok time: ${bangkok.toISOString()}, Hour: ${hour}`);
+      
       if (hour === 8) {
+        console.log("[CRON] Sending today's agenda");
         await sendDailyAgendaToBoss(env, { format, type: 'today' });
       } else if (hour === 20) {
+        console.log("[CRON] Sending tomorrow's agenda");
         await sendDailyAgendaToBoss(env, { format, type: 'tomorrow' });
+      } else {
+        console.log(`[CRON] No action for hour ${hour}`);
       }
     } catch (e) {
       console.error("CRON ERROR:", e?.message, e?.stack);
@@ -1073,6 +1098,8 @@ document.addEventListener('DOMContentLoaded', function(){
  * Cron helpers
  * ========================= */
 async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type = "today" } = {}) {
+  console.log(`[sendDailyAgendaToBoss] Starting with format: ${format}, force: ${force}, type: ${type}`);
+  
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
   const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
@@ -1088,12 +1115,16 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
     dateForQuery = `${bangkok.getFullYear()}-${String(bangkok.getMonth()+1).padStart(2,"0")}-${String(bangkok.getDate()).padStart(2,"0")}`;
   }
   
+  console.log(`[sendDailyAgendaToBoss] Target date: ${dateForQuery}`);
+  
   const dayOfWeek = targetDate.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  console.log(`[sendDailyAgendaToBoss] Day of week: ${dayOfWeek}, Is weekend: ${isWeekend}`);
 
   const bosses = await env.schedule_db
     .prepare("SELECT id, name, line_user_id FROM users WHERE role='boss' AND line_user_id IS NOT NULL")
     .all();
+  console.log(`[sendDailyAgendaToBoss] Found ${bosses?.results?.length || 0} bosses`);
   if (!bosses?.results?.length) {
     console.warn("[cron] no boss with line_user_id");
     return;
@@ -1108,6 +1139,7 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
     .all();
 
   const items = schedules?.results || [];
+  console.log(`[sendDailyAgendaToBoss] Found ${items.length} schedules for ${dateForQuery}`);
   
   if (isWeekend && items.length === 0) {
     console.log(`[cron] Skip weekend notification - no tasks on ${dateForQuery}`);
@@ -1121,6 +1153,7 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
 
   for (const b of bosses.results) {
     const target = b.line_user_id;
+    console.log(`[sendDailyAgendaToBoss] Processing boss: ${b.name} (${target})`);
 
     if (!force) {
       const notificationType = type === "tomorrow" ? "tomorrow" : "daily";
@@ -1128,14 +1161,21 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
         .prepare("SELECT 1 FROM notifications_sent WHERE type=? AND target=? AND date(sent_at) = date('now','localtime') LIMIT 1")
         .bind(notificationType, target)
         .first();
-      if (already) { console.log(`[cron] skip duplicate ${notificationType}`, target); continue; }
+      if (already) { 
+        console.log(`[cron] skip duplicate ${notificationType}`, target); 
+        continue; 
+      }
     }
 
+    console.log(`[sendDailyAgendaToBoss] Sending ${format} message to ${target}`);
+    
     if (format === "flex" && items.length) {
       const bubble = buildAgendaFlex(dateForQuery, items, dayText);
       await pushLineFlex(env, target, bubble);
+      console.log(`[sendDailyAgendaToBoss] Sent flex message to ${target}`);
     } else {
       await pushLineText(env, target, asText);
+      console.log(`[sendDailyAgendaToBoss] Sent text message to ${target}`);
     }
 
     if (!force) {
@@ -1145,8 +1185,11 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
         .prepare("INSERT INTO notifications_sent (id, schedule_id, type, target, sent_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))")
         .bind(nid, "-", notificationType, target)
         .run();
+      console.log(`[sendDailyAgendaToBoss] Recorded notification for ${target}`);
     }
   }
+  
+  console.log(`[sendDailyAgendaToBoss] Completed sending to ${bosses.results.length} bosses`);
 }
 
 function buildAgendaText(dateStr, items, dayText = "วันนี้") {
@@ -1629,18 +1672,52 @@ async function replyFlexForCreate(env, replyToken) {
   await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
 }
 async function pushLineText(env, lineUserId, text) {
+  console.log(`[pushLineText] Sending to ${lineUserId}:`, text.substring(0, 100) + '...');
+  
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+    console.error("[pushLineText] LINE_CHANNEL_ACCESS_TOKEN not configured");
+    return;
+  }
+  
   const url = "https://api.line.me/v2/bot/message/push";
   const headers = { "content-type": "application/json", "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` };
   const body = { to: lineUserId, messages: [{ type: "text", text }] };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) { const msg = await res.text().catch(() => res.statusText); console.error("LINE push error:", res.status, msg); }
+  
+  try {
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    if (!res.ok) { 
+      const msg = await res.text().catch(() => res.statusText); 
+      console.error("[pushLineText] LINE push error:", res.status, msg); 
+    } else {
+      console.log(`[pushLineText] Successfully sent to ${lineUserId}`);
+    }
+  } catch (error) {
+    console.error("[pushLineText] Network error:", error.message);
+  }
 }
 async function pushLineFlex(env, lineUserId, bubble) {
+  console.log(`[pushLineFlex] Sending flex message to ${lineUserId}`);
+  
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+    console.error("[pushLineFlex] LINE_CHANNEL_ACCESS_TOKEN not configured");
+    return;
+  }
+  
   const url = "https://api.line.me/v2/bot/message/push";
   const headers = { "content-type": "application/json", "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` };
   const body = { to: lineUserId, messages: [{ type: "flex", altText: "สรุปงานวันนี้", contents: bubble }] };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) { const msg = await res.text().catch(() => res.statusText); console.error("LINE push FLEX error:", res.status, msg); }
+  
+  try {
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    if (!res.ok) { 
+      const msg = await res.text().catch(() => res.statusText); 
+      console.error("[pushLineFlex] LINE push FLEX error:", res.status, msg); 
+    } else {
+      console.log(`[pushLineFlex] Successfully sent flex to ${lineUserId}`);
+    }
+  } catch (error) {
+    console.error("[pushLineFlex] Network error:", error.message);
+  }
 }
 
 async function verifyLineSignatureSafe(request, env) {
