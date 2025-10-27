@@ -88,7 +88,7 @@ td{padding:12px;border-bottom:1px solid var(--border)}
     <div><button class="btn" onclick="loadList()">โหลด</button></div>
   </div>
   <table>
-    <thead><tr><th>วันที่</th><th>เวลา</th><th>เรื่อง</th><th>สถานที่</th><th>หมวดหมู่</th><th>สถานะ</th><th>การตอบ</th><th>จัดการ</th></tr></thead>
+    <thead><tr><th>วันที่</th><th>เวลา</th><th>เรื่อง</th><th>สถานที่</th><th>หมายเหตุ</th><th>หมวดหมู่</th><th>สถานะ</th><th>การตอบ</th><th>จัดการ</th></tr></thead>
     <tbody id="list"></tbody>
   </table>
 </div>
@@ -127,11 +127,13 @@ async function loadList(){
   const rows = (j?.data||[]).map((s,i)=>{
     const time = s.end_time ? (s.start_time+'–'+s.end_time) : s.start_time;
     const att = s.attend_status || '-';
+    const notes = s.notes || '-';
     return '<tr>'+
       '<td>'+ (s.date||'') +'</td>'+
       '<td>'+ (time||'') +'</td>'+
       '<td>'+ (s.title||'') +'</td>'+
       '<td>'+ (s.place||'') +'</td>'+
+      '<td style="max-width:200px;word-wrap:break-word">'+ notes +'</td>'+
       '<td>'+
         '<select onchange="updateCategory(\\''+s.id+'\\',this.value)" style="padding:4px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--text)">'+
           '<option value="00000000-0000-0000-0000-000000000001" '+(s.category_id==='00000000-0000-0000-0000-000000000001'?'selected':'')+'>งานในหน่วย</option>'+

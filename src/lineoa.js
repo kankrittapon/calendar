@@ -37,29 +37,41 @@ export function flexBubbleForTask(task) {
   const time  = `${task.start_time || ""}${task.end_time ? "–"+task.end_time : ""}`;
   const place = task.place || task.location || "";
   const color = task.category_color || "#4b5563";
+  const notes = task.notes || task.agenda || "";
+
+  // สร้างเนื้อหาหลัก
+  const mainContents = [
+    { type: "text", text: "📅 ตารางงานวันนี้", weight:"bold", size:"lg", color:"#f8fafc", align: "center" },
+    { type: "separator", margin: "md", color: "#334155" },
+    { type: "text", text: title, weight:"bold", size:"xl", wrap:true, color:"#e5e7eb", margin: "md" },
+    { type: "box", layout:"baseline", spacing:"sm", margin: "sm", contents:[
+      { type:"text", text:"⏰ เวลา:", size:"sm", color:"#94a3b8", flex: 2 },
+      { type:"text", text: time || "-", size:"sm", wrap:true, color:"#e5e7eb", flex: 3, weight: "bold" }
+    ]},
+    { type: "box", layout:"baseline", spacing:"sm", margin: "sm", contents:[
+      { type:"text", text:"📍 สถานที่:", size:"sm", color:"#94a3b8", flex: 2 },
+      { type:"text", text: place || "-", size:"sm", wrap:true, color:"#e5e7eb", flex: 3 }
+    ]}
+  ];
+
+  // เพิ่มหมายเหตุ/กำหนดการถ้ามี
+  if (notes) {
+    mainContents.push(
+      { type: "separator", margin: "md", color: "#334155" },
+      { type: "text", text: "📋 หมายเหตุ/กำหนดการ:", size: "sm", color: "#94a3b8", margin: "md" },
+      { type: "text", text: notes, size: "sm", wrap: true, color: "#cbd5e1", margin: "sm" }
+    );
+  }
 
   return {
     type: "bubble",
-    size: "mega",
+    size: "giga",
     body: {
       type: "box",
       layout: "vertical",
-      spacing: "md",
-      contents: [
-        { type: "text", text: "ตารางงานวันนี้", weight:"bold", size:"sm", color:"#a1a1aa" },
-        { type: "text", text: title, weight:"bold", size:"xl", wrap:true },
-        { type: "box", layout:"baseline", spacing:"sm", contents:[
-          { type:"text", text:"เวลา", size:"sm", color:"#a1a1aa" },
-          { type:"text", text: time || "-", size:"sm", wrap:true, color:"#e5e7eb" }
-        ]},
-        { type: "box", layout:"baseline", spacing:"sm", contents:[
-          { type:"text", text:"สถานที่", size:"sm", color:"#a1a1aa" },
-          { type:"text", text: place || "-", size:"sm", wrap:true, color:"#e5e7eb" }
-        ]},
-      ],
-      borderColor: color,
-      borderWidth: "2px",
-      cornerRadius: "xl",
+      spacing: "sm",
+      contents: mainContents,
+      paddingAll: "16px",
       backgroundColor: "#0f172a"
     },
     footer: {
@@ -73,7 +85,7 @@ export function flexBubbleForTask(task) {
           color: "#16a34a",
           action: {
             type: "postback",
-            label: "ไป",
+            label: "✅ ไป",
             data: `action=attend_yes&id=${task.id}`
           }
         },
@@ -83,12 +95,13 @@ export function flexBubbleForTask(task) {
           color: "#ef4444",
           action: {
             type: "postback",
-            label: "ไม่ไป",
+            label: "❌ ไม่ไป",
             data: `action=attend_no&id=${task.id}`
           }
         }
       ],
-      backgroundColor: "#111827"
+      backgroundColor: "#111827",
+      paddingAll: "12px"
     }
   };
 }
@@ -219,6 +232,163 @@ export function renderDailyHTML(ymd, items = []) {
 
 function escapeHTML(s="") {
   return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+// ===== ฟังก์ชันสำหรับการแจ้งเตือนก่อนเวลานัดหมาย =====
+export async function sendUpcomingReminders(env) {
+  console.log('[sendUpcomingReminders] Starting reminder check...');
+  
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+  const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
+  
+  // หาเวลา 1-2 ชั่วโมงข้างหน้า
+  const oneHourLater = new Date(bangkok.getTime() + 60 * 60 * 1000);
+  const twoHoursLater = new Date(bangkok.getTime() + 2 * 60 * 60 * 1000);
+  
+  const today = bangkok.toISOString().slice(0, 10);
+  const oneHourTime = oneHourLater.toTimeString().slice(0, 5);
+  const twoHoursTime = twoHoursLater.toTimeString().slice(0, 5);
+  
+  console.log(`[sendUpcomingReminders] Checking for tasks between ${oneHourTime} and ${twoHoursTime} on ${today}`);
+  
+  // ค้นหางานที่จะเริ่มใน 1-2 ชั่วโมงข้างหน้า
+  const upcomingTasks = await env.schedule_db
+    .prepare(`
+      SELECT id, title, date, start_time, end_time, place, location, notes, category_id
+      FROM schedules 
+      WHERE date = ? 
+        AND start_time BETWEEN ? AND ?
+        AND (status IS NULL OR status IN ('planned', 'in_progress'))
+      ORDER BY start_time ASC
+    `)
+    .bind(today, oneHourTime, twoHoursTime)
+    .all();
+    
+  const tasks = upcomingTasks?.results || [];
+  console.log(`[sendUpcomingReminders] Found ${tasks.length} upcoming tasks`);
+  
+  if (tasks.length === 0) {
+    console.log('[sendUpcomingReminders] No upcoming tasks found');
+    return;
+  }
+  
+  // หา Boss ที่มี LINE ID
+  const bosses = await env.schedule_db
+    .prepare("SELECT id, name, line_user_id FROM users WHERE role='boss' AND line_user_id IS NOT NULL")
+    .all();
+    
+  if (!bosses?.results?.length) {
+    console.log('[sendUpcomingReminders] No bosses with LINE ID found');
+    return;
+  }
+  
+  // ส่งแจ้งเตือนให้แต่ละ Boss
+  for (const boss of bosses.results) {
+    for (const task of tasks) {
+      // ตรวจสอบว่าส่งแจ้งเตือนแล้วหรือยัง
+      const alreadySent = await env.schedule_db
+        .prepare("SELECT 1 FROM notifications_sent WHERE type='reminder' AND target=? AND schedule_id=? AND date(sent_at) = date('now','localtime') LIMIT 1")
+        .bind(boss.line_user_id, task.id)
+        .first();
+        
+      if (alreadySent) {
+        console.log(`[sendUpcomingReminders] Reminder already sent for task ${task.id} to ${boss.line_user_id}`);
+        continue;
+      }
+      
+      // สร้าง Flex Message สำหรับการแจ้งเตือน
+      const reminderBubble = buildReminderFlex(task);
+      
+      try {
+        await pushLineFlex(env, boss.line_user_id, reminderBubble);
+        console.log(`[sendUpcomingReminders] Sent reminder for task ${task.id} to ${boss.line_user_id}`);
+        
+        // บันทึกว่าส่งแจ้งเตือนแล้ว
+        const nid = crypto.randomUUID();
+        await env.schedule_db
+          .prepare("INSERT INTO notifications_sent (id, schedule_id, type, target, sent_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))")
+          .bind(nid, task.id, "reminder", boss.line_user_id)
+          .run();
+          
+      } catch (error) {
+        console.error(`[sendUpcomingReminders] Failed to send reminder for task ${task.id}:`, error);
+      }
+    }
+  }
+  
+  console.log('[sendUpcomingReminders] Reminder check completed');
+}
+
+function buildReminderFlex(task) {
+  const time = task.end_time ? `${task.start_time}–${task.end_time}` : task.start_time;
+  const place = task.place || task.location || "-";
+  const notes = task.notes || task.agenda || "";
+  
+  const mainContents = [
+    { type: "text", text: "⏰ แจ้งเตือนงานใกล้เวลา", weight: "bold", size: "lg", color: "#f59e0b", align: "center" },
+    { type: "separator", margin: "md", color: "#f59e0b" },
+    { type: "text", text: task.title || "-", weight: "bold", size: "xl", wrap: true, color: "#e5e7eb", margin: "md", align: "center" },
+    { type: "box", layout: "baseline", spacing: "sm", margin: "md", contents: [
+      { type: "text", text: "⏰ เวลา:", size: "sm", color: "#94a3b8", flex: 2 },
+      { type: "text", text: time, size: "sm", wrap: true, color: "#e5e7eb", flex: 3, weight: "bold" }
+    ]},
+    { type: "box", layout: "baseline", spacing: "sm", margin: "sm", contents: [
+      { type: "text", text: "📍 สถานที่:", size: "sm", color: "#94a3b8", flex: 2 },
+      { type: "text", text: place, size: "sm", wrap: true, color: "#e5e7eb", flex: 3 }
+    ]}
+  ];
+  
+  // เพิ่มหมายเหตุ/กำหนดการถ้ามี
+  if (notes) {
+    mainContents.push(
+      { type: "separator", margin: "md", color: "#334155" },
+      { type: "text", text: "📝 กำหนดการ/หมายเหตุ:", size: "sm", color: "#94a3b8", margin: "md" },
+      { type: "text", text: notes, size: "sm", wrap: true, color: "#cbd5e1", margin: "sm" }
+    );
+  }
+  
+  return {
+    type: "bubble",
+    size: "giga",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      contents: mainContents,
+      paddingAll: "16px",
+      backgroundColor: "#0f172a"
+    },
+    footer: {
+      type: "box",
+      layout: "horizontal",
+      spacing: "md",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: "#16a34a",
+          action: {
+            type: "postback",
+            label: "✅ รับทราบ",
+            data: `action=attend_yes&id=${task.id}`
+          }
+        },
+        {
+          type: "button",
+          style: "secondary",
+          color: "#ef4444",
+          action: {
+            type: "postback",
+            label: "❌ ไม่สามารถไป",
+            data: `action=attend_no&id=${task.id}`
+          }
+        }
+      ],
+      backgroundColor: "#111827",
+      paddingAll: "12px"
+    }
+  };
 }
 
 // ===== Browser Rendering → PNG (base64) =====

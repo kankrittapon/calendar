@@ -324,7 +324,7 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
           if (format === "flex") {
             const today = new Date().toISOString().slice(0,10);
             const schedules = await env.schedule_db
-              .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,attend_status
+              .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,attend_status,notes
                         FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
               .bind(today).all();
             const items = schedules?.results || [];
@@ -338,6 +338,14 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
         } else {
           return json({ ok: false, error: "LINE_CHANNEL_ACCESS_TOKEN not configured" });
         }
+      }
+
+      // ทดสอบการแจ้งเตือนก่อนเวลานัดหมาย
+      if (pathname === "/test/reminder" && method === "POST") {
+        console.log("Test reminder called");
+        const { sendUpcomingReminders } = await import('./lineoa.js');
+        await sendUpcomingReminders(env);
+        return json({ ok: true, message: "Reminder check completed" });
       }
 
       // ทดสอบส่งข้อความให้เลขา
@@ -382,7 +390,7 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
 
               const today = new Date().toISOString().slice(0,10);
               const schedules = await env.schedule_db
-                .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status
+                .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
                           FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
                 .bind(today).all();
 
@@ -406,7 +414,7 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
               const tomorrowStr = tomorrow.toISOString().slice(0,10);
 
               const schedules = await env.schedule_db
-                .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status
+                .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
                           FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
                 .bind(tomorrowStr).all();
 
@@ -589,17 +597,28 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
       const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
       const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
       const hour = bangkok.getHours();
+      const minute = bangkok.getMinutes();
 
-      console.log(`[CRON] Bangkok time: ${bangkok.toISOString()}, Hour: ${hour}`);
+      console.log(`[CRON] Bangkok time: ${bangkok.toISOString()}, Hour: ${hour}, Minute: ${minute}`);
 
-      if (hour === 8) {
+      // ส่งสรุปงานประจำวัน
+      if (hour === 8 && minute === 30) {
         console.log("[CRON] Sending today's agenda");
         await sendDailyAgendaToBoss(env, { format, type: 'today' });
-      } else if (hour === 20) {
+      } else if (hour === 20 && minute === 0) {
         console.log("[CRON] Sending tomorrow's agenda");
         await sendDailyAgendaToBoss(env, { format, type: 'tomorrow' });
-      } else {
-        console.log(`[CRON] No action for hour ${hour}`);
+      }
+      
+      // ตรวจสอบและส่งการแจ้งเตือนก่อนเวลานัดหมาย (ทุก 30 นาที)
+      if (minute === 0 || minute === 30) {
+        console.log("[CRON] Checking for upcoming reminders");
+        const { sendUpcomingReminders } = await import('./lineoa.js');
+        await sendUpcomingReminders(env);
+      }
+      
+      if (hour !== 8 && hour !== 20 && minute !== 0 && minute !== 30) {
+        console.log(`[CRON] No action for ${hour}:${minute.toString().padStart(2, '0')}`);
       }
     } catch (e) {
       console.error("CRON ERROR:", e?.message, e?.stack);
@@ -1582,6 +1601,7 @@ function openDayForm(selectedDate){
           '</select>'+
         '</div>'+
         '<input id="newPlace" placeholder="สถานที่" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid #374151;border-radius:6px;background:#1f2937;color:#e5e7eb">'+
+        '<textarea id="newNotes" placeholder="หมายเหตุ/กำหนดการ" rows="2" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid #374151;border-radius:6px;background:#1f2937;color:#e5e7eb;resize:vertical"></textarea>'+
         '<select id="newCategory" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid #374151;border-radius:6px;background:#1f2937;color:#e5e7eb">'+
           '<option value="00000000-0000-0000-0000-000000000001">งานในหน่วย</option>'+
           '<option value="00000000-0000-0000-0000-000000000002">งานในกรม</option>'+
@@ -1605,9 +1625,10 @@ async function loadDayTasks(date){
   const tasks = j?.data || [];
   const html = tasks.map(t => {
     const time = t.end_time ? (t.start_time+'–'+t.end_time) : t.start_time;
+    const notes = t.notes ? '<br><small style="color:#cbd5e1">📝 '+t.notes+'</small>' : '';
     return '<div style="padding:8px;margin:4px 0;background:#1f2937;border-radius:6px;color:#e5e7eb">' +
            '<strong>'+(t.title||'-')+'</strong> <span style="color:#9ca3af">'+time+'</span><br>' +
-           '<small>'+(t.place||'-')+'</small></div>';
+           '<small>'+(t.place||'-')+'</small>' + notes + '</div>';
   }).join('');
   document.getElementById('taskList').innerHTML = html || '<p style="color:#9ca3af">ยังไม่มีงาน</p>';
 }
@@ -1621,12 +1642,13 @@ async function addTask(date){
 
   if(!title || !start) return alert('กรุณากรอกชื่อและเวลาเริ่ม');
 
+  const notes = document.getElementById('newNotes').value.trim();
   const res = await fetch('/schedules', {
     method: 'POST',
     headers: {'content-type': 'application/json'},
     body: JSON.stringify({
       title, date, start_time: start, end_time: end || null, place: place || null,
-      category_id: category
+      category_id: category, notes: notes || null
     })
   });
 
@@ -1635,6 +1657,7 @@ async function addTask(date){
     document.getElementById('newStart').selectedIndex = 0;
     document.getElementById('newEnd').selectedIndex = 0;
     document.getElementById('newPlace').value = '';
+    document.getElementById('newNotes').value = '';
     loadDayTasks(date);
     render();
   } else {
@@ -1694,7 +1717,7 @@ async function sendDailyAgendaToBoss(env, { format = "flex", force = false, type
   }
 
   const schedules = await env.schedule_db
-    .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,attend_status
+    .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,attend_status,notes
               FROM schedules
               WHERE date = ? AND (status IS NULL OR status IN ('planned','in_progress'))
               ORDER BY time(start_time) ASC`)
