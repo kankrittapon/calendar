@@ -91,7 +91,7 @@ button:hover{background:#15803d}
 h3{color:#cbd5e1;margin-top:16px;margin-bottom:8px;font-size:14px}
 </style></head>
 <body>
-<h1>ทดสอบระบบ Schedule Worker</h1>
+<h1>ทดสอบระบบ</h1>
 <div class="global-token">
 <h2>🔑 ตั้งค่า Token สำหรับทุกฟีเจอร์</h2>
 <label>SEED_ADMIN_TOKEN:<br><input id="globalToken" type="password" placeholder="ใส่ SEED_ADMIN_TOKEN" style="width:300px"/></label>
@@ -428,6 +428,16 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
               continue;
             }
 
+            // คำสั่ง help
+            if (msg === "help" || msg === "ช่วยเหลือ" || msg === "คำสั่ง") {
+              const role = await getUserRoleByLineId(env, ev.source?.userId);
+              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
+
+              const helpBubble = buildHelpFlex();
+              await replyLineFlex(env, ev.replyToken, helpBubble);
+              continue;
+            }
+
             // ส่งข้อความให้เลขา
             if (msg === "ส่งข้อความให้เลขา") {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
@@ -453,9 +463,50 @@ async function deleteUser(){const token=getToken();if(!token)return;const userId
               continue;
             }
 
+            // ตอบสนองตัวเลือกจาก help menu
+            if (/^[1-4]$/.test(msg)) {
+              const role = await getUserRoleByLineId(env, ev.source?.userId);
+              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
+
+              if (msg === "1") {
+                const today = new Date().toISOString().slice(0,10);
+                const schedules = await env.schedule_db
+                  .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
+                            FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
+                  .bind(today).all();
+                const items = schedules?.results || [];
+                if (items.length === 0) {
+                  await replyText(env, ev.replyToken, "วันนี้ไม่มีงาน");
+                } else {
+                  const bubble = buildScheduleFlexWithActions(today, items);
+                  await replyLineFlex(env, ev.replyToken, bubble);
+                }
+              } else if (msg === "2") {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tomorrowStr = tomorrow.toISOString().slice(0,10);
+                const schedules = await env.schedule_db
+                  .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
+                            FROM schedules WHERE date = ? ORDER BY time(start_time) ASC`)
+                  .bind(tomorrowStr).all();
+                const items = schedules?.results || [];
+                if (items.length === 0) {
+                  await replyText(env, ev.replyToken, "พรุ่งนี้ไม่มีงาน");
+                } else {
+                  const bubble = buildScheduleFlexWithActions(tomorrowStr, items);
+                  await replyLineFlex(env, ev.replyToken, bubble);
+                }
+              } else if (msg === "3") {
+                await replyText(env, ev.replyToken, "กรุณาพิมพ์ข้อความที่ต้องการส่งให้เลขา\nตัวอย่าง: ข้อความ:กรุณาเตรียมเอกสารประชุม");
+              } else if (msg === "4") {
+                await replyText(env, ev.replyToken, "วิธีเพิ่มงาน:\n\n🔸 งานเดียว:\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม\n\n🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม|อบรม,16,09:00,ห้องอบรม");
+              }
+              continue;
+            }
+
             // ถ้าเป็น boss และพิมพ์ข้อความธรรมดา ให้ส่งไปเลขาทุกคน
             const role = await getUserRoleByLineId(env, ev.source?.userId);
-            if (role === "boss" && msg && !msg.startsWith("งานด่วน:") && !msg.startsWith("เพิ่มงาน") && !msg.startsWith("ดูตารางงาน") && !msg.startsWith("ส่งข้อความ")) {
+            if (role === "boss" && msg && !msg.startsWith("งานด่วน:") && !msg.startsWith("เพิ่มงาน") && !msg.startsWith("ดูตารางงาน") && !msg.startsWith("ส่งข้อความ") && !/^[1-4]$/.test(msg) && msg !== "help" && msg !== "ช่วยเหลือ" && msg !== "คำสั่ง") {
               const sentCount = await sendMessageToAllSecretaries(env, msg);
               await replyText(env, ev.replyToken, `ส่งข้อความไปเลขา ${sentCount} คน`);
               continue;
@@ -1459,7 +1510,7 @@ footer{color:#6b7280;text-align:center;margin:28px 0 16px}
   </div>
   <h1>ตารางงาน · <span id="headline">${date}</span></h1>
   <div id="view" class="${view}"></div>
-  <footer>Generated by Cloudflare Worker</footer>
+  <footer>Generated by Krittapon</footer>
 </div>
 <script>
 const qs = new URLSearchParams(location.search);
@@ -2209,6 +2260,60 @@ async function notifySecretaryUrgentTask(env, task) {
   for (const sec of secretaries.results) {
     await pushLineFlex(env, sec.line_user_id, bubble);
   }
+}
+
+function buildHelpFlex() {
+  return {
+    type: "bubble",
+    size: "giga",
+    body: {
+      type: "box", layout: "vertical", backgroundColor: "#0f172a", paddingAll: "16px",
+      contents: [
+        { type: "text", text: "📝 คู่มือการใช้งาน", weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
+        { type: "separator", margin: "lg", color: "#334155" },
+        { type: "text", text: "กรุณาพิมพ์ตัวเลข 1-4 เพื่อเลือกฟังก์ชัน:", size: "sm", color: "#94a3b8", align: "center", margin: "md" },
+        {
+          type: "box", layout: "vertical", spacing: "md", margin: "lg",
+          contents: [
+            {
+              type: "box", layout: "horizontal", spacing: "sm", paddingAll: "12px",
+              backgroundColor: "#1f2937", cornerRadius: "8px",
+              contents: [
+                { type: "text", text: "1", size: "lg", color: "#3b82f6", weight: "bold", flex: 0 },
+                { type: "text", text: "ดูตารางงานวันนี้", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+              ]
+            },
+            {
+              type: "box", layout: "horizontal", spacing: "sm", paddingAll: "12px",
+              backgroundColor: "#1f2937", cornerRadius: "8px",
+              contents: [
+                { type: "text", text: "2", size: "lg", color: "#10b981", weight: "bold", flex: 0 },
+                { type: "text", text: "ดูตารางงานพรุ่งนี้", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+              ]
+            },
+            {
+              type: "box", layout: "horizontal", spacing: "sm", paddingAll: "12px",
+              backgroundColor: "#1f2937", cornerRadius: "8px",
+              contents: [
+                { type: "text", text: "3", size: "lg", color: "#f59e0b", weight: "bold", flex: 0 },
+                { type: "text", text: "ส่งข้อความให้เลขา", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+              ]
+            },
+            {
+              type: "box", layout: "horizontal", spacing: "sm", paddingAll: "12px",
+              backgroundColor: "#1f2937", cornerRadius: "8px",
+              contents: [
+                { type: "text", text: "4", size: "lg", color: "#ef4444", weight: "bold", flex: 0 },
+                { type: "text", text: "วิธีเพิ่มงานด่วน", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+              ]
+            }
+          ]
+        },
+        { type: "separator", margin: "lg", color: "#334155" },
+        { type: "text", text: "หรือพิมพ์ 'help' เพื่อดูเมนูนี้อีกครั้ง", size: "xs", color: "#64748b", align: "center", margin: "md" }
+      ]
+    }
+  };
 }
 
 function buildScheduleFlexWithActions(dateStr, items) {
