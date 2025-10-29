@@ -129,12 +129,26 @@ export async function linePushFlexCarousel(env, to, bubbles) {
 
 // ===== User profile (optional pretty name) =====
 export async function getUserProfile(env, userId) {
-  if (!env.LINE_CHANNEL_ACCESS_TOKEN) return null;
+  if (!token) return null;
   const res = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
     headers: { Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` },
   });
   if (!res.ok) return null;
-  return res.json().catch(() => null); // { userId, displayName, ... }
+  
+  // Get profile data
+  const profile = await res.json().catch(() => null);
+  
+  // If we got profile data, update/insert into line_targets
+  if (profile && env.schedule_db) {
+    await env.schedule_db
+      .prepare(`INSERT OR REPLACE INTO line_targets (line_user_id, display_name, created_at, updated_at) 
+                VALUES (?1, ?2, COALESCE((SELECT created_at FROM line_targets WHERE line_user_id = ?1), datetime('now')), datetime('now'))`)
+      .bind(profile.userId, profile.displayName)
+      .run()
+      .catch(console.error);
+  }
+  
+  return profile;
 }
 
 // ===== Verify LINE webhook signature =====

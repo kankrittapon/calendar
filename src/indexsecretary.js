@@ -40,7 +40,7 @@ td{padding:12px;border-bottom:1px solid var(--border)}
   <h2>เพิ่มงาน</h2>
   <div class="row">
     <div><label>ชื่อเรื่อง <input id="title" /></label></div>
-    <div><label>วันที่ (1-31) <input id="date" type="number" min="1" max="31" placeholder="22" /></label></div>
+  <div><label>วันที่ <input id="date" type="date" /></label></div>
     <div><label>เวลาเริ่ม
       <select id="start">
         <option value="">เลือกเวลา</option>
@@ -100,16 +100,26 @@ const $ = (id) => document.getElementById(id);
 
 
 async function createSchedule(){
-  const day = $('date').value;
-  if(!day) return alert('กรุณาใส่วันที่');
+  // use full ISO date input (YYYY-MM-DD) and normalize to Asia/Bangkok timezone
+  const dateInput = $('date').value;
+  if(!dateInput) return alert('กรุณาใส่วันที่');
 
-  const now = new Date();
-  const currentDate = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+  // Convert to Asia/Bangkok timezone (UTC+7)
+  const date = new Date(dateInput);
+  const bangkokOffset = 7 * 60; // Bangkok is UTC+7
+  const userOffset = date.getTimezoneOffset();
+  const totalOffset = bangkokOffset + userOffset;
+  date.setMinutes(date.getMinutes() + totalOffset);
+  const normalizedDate = date.toISOString().slice(0,10);
 
   const body = {
-    title: $('title').value, date: currentDate, start_time: $('start').value,
-    end_time: $('end').value || null, place: $('place').value || null,
-    category_id: $('category').value || null, notes: $('notes').value || null
+    title: $('title').value,
+    date: normalizedDate,
+    start_time: $('start').value,
+    end_time: $('end').value || null,
+    place: $('place').value || null,
+    category_id: $('category').value || null,
+    notes: $('notes').value || null
   };
   const res = await fetch(base + '/schedules', {
     method:'POST', headers: {'content-type':'application/json'},
@@ -121,7 +131,17 @@ async function createSchedule(){
 }
 
 async function loadList(){
-  const q = $('qdate').value ? ('?date='+encodeURIComponent($('qdate').value)) : '';
+  let q = '';
+  if ($('qdate').value) {
+    // Normalize selected date to Asia/Bangkok timezone
+    const date = new Date($('qdate').value);
+    const bangkokOffset = 7 * 60;
+    const userOffset = date.getTimezoneOffset();
+    const totalOffset = bangkokOffset + userOffset;
+    date.setMinutes(date.getMinutes() + totalOffset);
+    const normalizedDate = date.toISOString().slice(0,10);
+    q = '?date=' + encodeURIComponent(normalizedDate);
+  }
   const res = await fetch(base + '/schedules'+q);
   const j = await res.json().catch(()=>({}));
   const rows = (j?.data||[]).map((s,i)=>{
@@ -191,23 +211,42 @@ function editTask(id){
     const deleteBtn = row.querySelector('button[onclick*="deleteTask"]');
     if(deleteBtn && deleteBtn.onclick.toString().includes(id)){
       const cells = row.querySelectorAll('td');
-      const timeText = cells[0].textContent.trim();
+      const dateText = cells[0].textContent.trim(); // วันที่
+      const timeText = cells[1].textContent.trim(); // เวลา
       const times = timeText.includes('–') ? timeText.split('–') : [timeText, ''];
       taskData = {
-        title: cells[1].textContent.trim(),
+        date: dateText,
+        title: cells[2].textContent.trim(), // ชื่อเรื่อง
         start_time: times[0],
         end_time: times[1],
-        place: cells[2].textContent.trim()
+        place: cells[3].textContent.trim(), // สถานที่
+        notes: cells[4].textContent.trim() === '-' ? '' : cells[4].textContent.trim() // หมายเหตุ
       };
     }
   });
 
   if(!taskData) return alert('ไม่พบข้อมูลงาน');
 
+  // แยกวันที่เพื่อใส่ในช่องวันที่ (ใช้ full ISO date YYYY-MM-DD)
+  if (taskData.date) {
+    // taskData.date might be full ISO datetime (e.g. 2025-10-22T00:00:00Z)
+    // normalize to YYYY-MM-DD in Asia/Bangkok timezone
+    const date = new Date(taskData.date);
+    const bangkokOffset = 7 * 60;
+    const userOffset = date.getTimezoneOffset();
+    const totalOffset = bangkokOffset + userOffset;
+    date.setMinutes(date.getMinutes() + totalOffset);
+    $('date').value = date.toISOString().slice(0,10);
+  }
+
+  // เก็บข้อมูลวันที่เดิมไว้ใช้ตอนอัพเดท (full ISO)
+  window.editingTaskDate = taskData.date;
+  
   $('title').value = taskData.title;
   $('start').value = taskData.start_time;
   $('end').value = taskData.end_time;
   $('place').value = taskData.place;
+  $('notes').value = taskData.notes;
 
   const btn = document.querySelector('button[onclick="createSchedule()"]');
   btn.textContent = 'อัพเดทงาน';
@@ -215,20 +254,38 @@ function editTask(id){
 }
 
 async function updateTask(id){
+  const dateInput = $('date').value;
+  if (!dateInput) return alert('กรุณาใส่วันที่');
+
+  // Convert to Asia/Bangkok timezone (UTC+7)
+  const date = new Date(dateInput);
+  const bangkokOffset = 7 * 60;
+  const userOffset = date.getTimezoneOffset();
+  const totalOffset = bangkokOffset + userOffset;
+  date.setMinutes(date.getMinutes() + totalOffset);
+  const targetDate = date.toISOString().slice(0,10);
+
   const body = {
-    title: $('title').value, start_time: $('start').value,
-    end_time: $('end').value || null, place: $('place').value || null
+    title: $('title').value, 
+    date: targetDate,
+    start_time: $('start').value,
+    end_time: $('end').value || null, 
+    place: $('place').value || null,
+    category_id: $('category').value || null,
+    notes: $('notes').value || null
   };
   const res = await fetch(base + '/schedules/'+id, {
     method:'PATCH', headers: {'content-type':'application/json'},
     body: JSON.stringify(body)
   });
   if(res.ok){
-    $('title').value=''; $('date').value=''; $('start').selectedIndex=0; $('end').selectedIndex=0; $('place').value='';
+    $('title').value=''; $('date').value=''; $('start').selectedIndex=0; $('end').selectedIndex=0; $('place').value=''; $('notes').value=''; $('category').selectedIndex=0;
     const btn = document.querySelector('button[onclick*="updateTask"]');
     btn.textContent = 'บันทึกงาน';
     btn.onclick = createSchedule;
+    window.editingTaskDate = null; // ล้างข้อมูลวันที่เดิม
     loadList();
+    $('createMsg').innerText = '✅ อัพเดทแล้ว';
   } else {
     alert('อัพเดทไม่สำเร็จ');
   }
