@@ -683,7 +683,8 @@ export default {
                 continue;
               }
 
-              await sendMessageToAllSecretaries(env, message);
+              const sentCount = await sendMessageToAllSecretaries(env, message);
+              await replyText(env, ev.replyToken, `✅ ส่งข้อความไป ${sentCount} คน: ${message}`);
               continue;
             }
 
@@ -698,7 +699,8 @@ export default {
                 continue;
               }
 
-              await sendMessageToAllSecretaries(env, message);
+              const sentCount = await sendMessageToAllSecretaries(env, message);
+              await replyText(env, ev.replyToken, `✅ ส่งข้อความไป ${sentCount} คน: ${message}`);
               continue;
             }
 
@@ -713,7 +715,8 @@ export default {
                 continue;
               }
 
-              await sendMessageToAllSecretaries(env, message);
+              const sentCount = await sendMessageToAllSecretaries(env, message);
+              await replyText(env, ev.replyToken, `✅ ส่งข้อความไป ${sentCount} คน: ${message}`);
               continue;
             }
 
@@ -801,8 +804,10 @@ export default {
               continue;
             }
 
-            // หมายเหตุ: ลบการส่งข้อความอัตโนมัติไปเลขา - ต้องใช้คำสั่ง trigger เฉพาะแล้ว
-            // ไม่ส่งข้อความอัตโนมัติอีกต่อไป
+            // Default case - ไม่ทำอะไร (ลบการส่งข้อความอัตโนมัติ)
+            console.log(`Unhandled message from boss: ${msg}`);
+            await replyText(env, ev.replyToken, "ไม่เข้าใจคำสั่ง กรุณาพิมพ์ 'help' เพื่อดูคำสั่งที่ใช้ได้");
+            continue;
 
             // Quick Work
             if (msg.startsWith("งานด่วน:")) {
@@ -865,17 +870,31 @@ export default {
                     mapCategoryTokenToId((location||"").split(/\s+/).find(x => x?.startsWith?.("#")));
                   if (mapped) category_id = mapped;
 
+                  // ตรวจสอบรูปแบบวันที่
+                  const dateObj = new Date(date + 'T00:00:00');
+                  if (isNaN(dateObj.getTime())) {
+                    results.push(`❌ ${title}: รูปแบบวันที่ไม่ถูกต้อง`);
+                    continue;
+                  }
+                  
+                  // แปลงวันที่เป็นรูปแบบ YYYY-MM-DD
+                  const formattedDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,'0')}-${String(dateObj.getDate()).padStart(2,'0')}`;
+                  
                   await createSchedule(env, {
-                    title, date, start_time,
-                    location, place: location, category_id,
+                    title, 
+                    date: formattedDate, 
+                    start_time,
+                    location, 
+                    place: location, 
+                    category_id,
                     assignees: "auto",
                     notes: role === "boss" ? "เพิ่มจาก LINE โดยหัวหน้า" : "เพิ่มจาก LINE โดยเลขา"
                   });
 
-                  results.push(`✅ ${title}: ${date} ${start_time}`);
+                  results.push(`✅ ${title}: ${formattedDate} ${start_time}`);
                 } catch (err) {
                   console.error("เพิ่มงาน error:", err);
-                  results.push(`❌ ${title}: เพิ่มไม่สำเร็จ`);
+                  results.push(`❌ ${title}: ${err.message || 'เพิ่มไม่สำเร็จ'}`);
                 }
               }
 
@@ -1727,7 +1746,12 @@ async function loadDayTasks(date){
            '<strong>'+(t.title||'-')+'</strong> <span style="color:#9ca3af">'+time+'</span><br>' +
            '<small>'+(t.place||'-')+'</small>' + notes + '</div>';
   }).join('');
-  document.getElementById('taskList').innerHTML = html || '<p style="color:#9ca3af">ยังไม่มีงาน</p>';
+  const taskListElement = document.getElementById('taskList');
+  if (taskListElement) {
+    taskListElement.innerHTML = html || '<p style="color:#9ca3af">ยังไม่มีงาน</p>';
+  } else {
+    console.error('Element with ID "taskList" not found');
+  }
 }
 
 async function addTask(selectedDate){
