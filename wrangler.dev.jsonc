@@ -1,0 +1,22 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "schedule-worker-dev",
+	"main": "src/index.js",
+	"compatibility_date": "2025-01-15",
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "schedule_db",
+			"database_name": "schedule_db_dev",
+			"database_id": "${CLOUDFLARE_DATABASE_ID}",
+			"remote": false
+		}
+	],
+
+	"vars": {
+		"TZ": "Asia/Bangkok",
+		"RENDER_MODE": "CLOUDFLARE"
+	}
+}

@@ -2,7 +2,7 @@
 // wrangler.jsonc ต้องมี:
 // "d1_databases": [{ "binding": "schedule_db", "database_name": "schedule_db" }]
 // "triggers": { "crons": ["30 1 * * *"] }  // 08:30 Asia/Bangkok (UTC+7)
-// ENV ที่ใช้: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, SEED_ADMIN_TOKEN, SECRETARY_API_KEY, AGENDA_FORMAT=text|flex
+// ENV ที่ใช้: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, SEED_ADMIN_TOKEN, AGENDA_FORMAT=text|flex
 
 import { renderSecretaryPage } from "./indexsecretary.js"; // หน้าเลขา (แยกไฟล์)
 
@@ -62,7 +62,7 @@ export default {
         return json({ ok: true });
       }
 
-      /* ===== Secretary APIs (ต้องมี api_key ของ role=secretary) ===== */
+      /* ===== Secretary APIs ===== */
       if (pathname === "/schedules" && method === "POST") {
         const body = await safeJson(request);
         const created = await createSchedule(env, body);
@@ -417,8 +417,8 @@ export default {
           if (ev.type === "message" && ev.message?.type === "text") {
             const msg = normalize(ev.message.text);
 
-            // ตารางงาน, งานวันนี้
-            if (msg === "ตารางงาน" || msg === "งานวันนี้" || msg === "ดูตารางงานวันนี้") {
+            // ตารางนัดหมายวันนี้, งานวันนี้
+            if (msg === "ตารางนัดหมายวันนี้" || msg === "ตารางงาน" || msg === "งานวันนี้" || msg === "ดูตารางงานวันนี้") {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
@@ -434,6 +434,62 @@ export default {
               } else {
                 const bubble = buildScheduleFlexWithActions(today, items);
                 await replyLineFlex(env, ev.replyToken, bubble);
+              }
+              continue;
+            }
+
+            // ตารางงานสัปดาห์นี้
+            if (msg === "ตารางงานสัปดาห์นี้" || msg === "งานสัปดาห์นี้") {
+              const role = await getUserRoleByLineId(env, ev.source?.userId);
+              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
+
+              const today = new Date();
+              const startOfWeek = new Date(today);
+              startOfWeek.setDate(today.getDate() - today.getDay() + 1); // จันทร์
+              const endOfWeek = new Date(startOfWeek);
+              endOfWeek.setDate(startOfWeek.getDate() + 6); // อาทิตย์
+
+              const startDate = startOfWeek.toISOString().slice(0,10);
+              const endDate = endOfWeek.toISOString().slice(0,10);
+
+              const schedules = await env.schedule_db
+                .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
+                          FROM schedules WHERE date BETWEEN ? AND ? ORDER BY date ASC, time(start_time) ASC`)
+                .bind(startDate, endDate).all();
+
+              const items = schedules?.results || [];
+              if (items.length === 0) {
+                await replyText(env, ev.replyToken, "สัปดาห์นี้ไม่มีงาน");
+              } else {
+                const bubble = buildWeeklyScheduleFlex(startDate, endDate, items);
+                await replyLineFlex(env, ev.replyToken, bubble);
+              }
+              continue;
+            }
+
+            // ตารางงานเดือนนี้
+            if (msg === "ตารางงานเดือนนี้" || msg === "งานเดือนนี้") {
+              const role = await getUserRoleByLineId(env, ev.source?.userId);
+              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
+
+              const today = new Date();
+              const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+              const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+              const startDate = startOfMonth.toISOString().slice(0,10);
+              const endDate = endOfMonth.toISOString().slice(0,10);
+
+              const schedules = await env.schedule_db
+                .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
+                          FROM schedules WHERE date BETWEEN ? AND ? ORDER BY date ASC, time(start_time) ASC`)
+                .bind(startDate, endDate).all();
+
+              const items = schedules?.results || [];
+              if (items.length === 0) {
+                await replyText(env, ev.replyToken, "เดือนนี้ไม่มีงาน");
+              } else {
+                // ส่งเป็นภาพปฏิทิน
+                await sendCalendarImage(env, ev.replyToken, startDate, endDate, items, "เดือนนี้");
               }
               continue;
             }
@@ -477,11 +533,41 @@ export default {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
-              await replyText(env, ev.replyToken, "กรุณาพิมพ์ข้อความที่ต้องการส่งให้เลขา\nตัวอย่าง: ข้อความ:กรุณาเตรียมเอกสารประชุม");
+              await replyText(env, ev.replyToken, "กรุณาพิมพ์: ผู้ช่วย หรือ เลขา ตามด้วยข้อความ\nตัวอย่าง: ผู้ช่วย กรุณาเตรียมเอกสารประชุม");
               continue;
             }
 
-            // ส่งข้อความไปเลขา
+            // ส่งข้อความไปเลขา (ต้องใช้คำสำคัญ "ผู้ช่วย" หรือ "เลขา" เป็น trigger)
+            if (msg.startsWith("ผู้ช่วย ") || msg.startsWith("เลขา ")) {
+              const role = await getUserRoleByLineId(env, ev.source?.userId);
+              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
+
+              const message = msg.replace(/^(ผู้ช่วย|เลขา)\s+/, "").trim();
+              if (!message) {
+                await replyText(env, ev.replyToken, "กรุณาระบุข้อความ เช่น: ผู้ช่วย กรุณาเตรียมเอกสารประชุม");
+                continue;
+              }
+
+              await sendMessageToAllSecretaries(env, message);
+              continue;
+            }
+
+            // รองรับรูปแบบเดิมด้วยเครื่องหมาย : (สำหรับความเข้ากันได้)
+            if (msg.startsWith("ผู้ช่วย:") || msg.startsWith("เลขา:")) {
+              const role = await getUserRoleByLineId(env, ev.source?.userId);
+              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
+
+              const message = msg.replace(/^(ผู้ช่วย|เลขา):/, "").trim();
+              if (!message) {
+                await replyText(env, ev.replyToken, "กรุณาระบุข้อความ เช่น: ผู้ช่วย:กรุณาเตรียมเอกสารประชุม");
+                continue;
+              }
+
+              await sendMessageToAllSecretaries(env, message);
+              continue;
+            }
+
+            // รองรับรูปแบบเดิม "ข้อความ:" (สำหรับความเข้ากันได้)
             if (msg.startsWith("ข้อความ:")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
@@ -492,13 +578,12 @@ export default {
                 continue;
               }
 
-              const sentCount = await sendMessageToAllSecretaries(env, message);
-              await replyText(env, ev.replyToken, `✅ ส่งข้อความไปเลขา ${sentCount} คน\n\n"${message}"`);
+              await sendMessageToAllSecretaries(env, message);
               continue;
             }
 
             // ตอบสนองตัวเลือกจาก help menu
-            if (/^[1-4]$/.test(msg)) {
+            if (/^[1-6]$/.test(msg)) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
@@ -531,20 +616,58 @@ export default {
                   await replyLineFlex(env, ev.replyToken, bubble);
                 }
               } else if (msg === "3") {
-                await replyText(env, ev.replyToken, "กรุณาพิมพ์ข้อความที่ต้องการส่งให้เลขา\nตัวอย่าง: ข้อความ:กรุณาเตรียมเอกสารประชุม");
+                await replyText(env, ev.replyToken, "กรุณาพิมพ์ข้อความที่ต้องการส่งให้เลขา\nตัวอย่าง: ผู้ช่วย กรุณาเตรียมเอกสารประชุม\nหรือ: เลขา กรุณาจัดเตรียมห้องประชุม");
               } else if (msg === "4") {
-                await replyText(env, ev.replyToken, "วิธีเพิ่มงาน:\n\n🔸 งานเดียว:\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม\n\n🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม|อบรม,16,09:00,ห้องอบรม");
+                await replyText(env, ev.replyToken, "วิธีส่งข้อความให้เลขา:\n\n🔸 รูปแบบใหม่ (แนะนำ):\nผู้ช่วย กรุณาเตรียมเอกสารประชุม\nเลขา กรุณาจัดเตรียมห้องประชุม\n\n🔸 รูปแบบเดิม (ยังใช้ได้):\nผู้ช่วย:กรุณาเตรียมเอกสารประชุม\nเลขา:กรุณาจัดเตรียมห้องประชุม\nข้อความ:กรุณาเตรียมเอกสารประชุม\n\n🔸 วิธีเพิ่มงาน:\nเพิ่มงาน:ประชุม 15 14:00 ห้องประชุม\nนัดหมาย:พบลูกค้า 20 10:00 ออฟฟิศ");
+              } else if (msg === "5") {
+                // ตารางงานสัปดาห์นี้
+                const today = new Date();
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - today.getDay() + 1);
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+                const startDate = startOfWeek.toISOString().slice(0,10);
+                const endDate = endOfWeek.toISOString().slice(0,10);
+
+                const schedules = await env.schedule_db
+                  .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
+                            FROM schedules WHERE date BETWEEN ? AND ? ORDER BY date ASC, time(start_time) ASC`)
+                  .bind(startDate, endDate).all();
+
+                const items = schedules?.results || [];
+                if (items.length === 0) {
+                  await replyText(env, ev.replyToken, "สัปดาห์นี้ไม่มีงาน");
+                } else {
+                  const bubble = buildWeeklyScheduleFlex(startDate, endDate, items);
+                  await replyLineFlex(env, ev.replyToken, bubble);
+                }
+              } else if (msg === "6") {
+                // ตารางงานเดือนนี้
+                const today = new Date();
+                const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+                const startDate = startOfMonth.toISOString().slice(0,10);
+                const endDate = endOfMonth.toISOString().slice(0,10);
+
+                const schedules = await env.schedule_db
+                  .prepare(`SELECT id,title,date,start_time,end_time,place,location,category_id,status,attend_status,notes
+                            FROM schedules WHERE date BETWEEN ? AND ? ORDER BY date ASC, time(start_time) ASC`)
+                  .bind(startDate, endDate).all();
+
+                const items = schedules?.results || [];
+                if (items.length === 0) {
+                  await replyText(env, ev.replyToken, "เดือนนี้ไม่มีงาน");
+                } else {
+                  await sendCalendarImage(env, ev.replyToken, startDate, endDate, items, "เดือนนี้");
+                }
               }
               continue;
             }
 
-            // ถ้าเป็น boss และพิมพ์ข้อความธรรมดา ให้ส่งไปเลขาทุกคน
-            const role = await getUserRoleByLineId(env, ev.source?.userId);
-            if (role === "boss" && msg && !msg.startsWith("งานด่วน:") && !msg.startsWith("เพิ่มงาน") && !msg.startsWith("ดูตารางงาน") && !msg.startsWith("ส่งข้อความ") && !/^[1-4]$/.test(msg) && msg !== "help" && msg !== "ช่วยเหลือ" && msg !== "คำสั่ง") {
-              const sentCount = await sendMessageToAllSecretaries(env, msg);
-              await replyText(env, ev.replyToken, `ส่งข้อความไปเลขา ${sentCount} คน`);
-              continue;
-            }
+            // หมายเหตุ: ลบการส่งข้อความอัตโนมัติไปเลขา - ต้องใช้คำสั่ง trigger เฉพาะแล้ว
+            // ไม่ส่งข้อความอัตโนมัติอีกต่อไป
 
             // Quick Work
             if (msg.startsWith("งานด่วน:")) {
@@ -564,27 +687,35 @@ export default {
             }
 
             // เพิ่มงานผ่านข้อความ (Boss และ Secretary)
-            if (msg.startsWith("เพิ่มงาน")) {
+            if (msg.startsWith("เพิ่มงาน") || msg.startsWith("นัดหมาย") || msg.startsWith("กำหนดการ")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (!role || (role !== "boss" && role !== "secretary")) {
                 await replyText(env, ev.replyToken, "เฉพาะหัวหน้าและเลขาเท่านั้น");
                 continue;
               }
 
-              if (msg === "เพิ่มงาน") {
+              if (msg === "เพิ่มงาน" || msg === "นัดหมาย" || msg === "กำหนดการ") {
                 await replyText(env, ev.replyToken,
-                  "📝 วิธีเพิ่มงาน:\n\n" +
-                  "🔸 งานเดียว:\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม\n\n" +
-                  "🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม,15,14:00,ห้องประชุม|อบรม,16,09:00,ห้องอบรม");
+                  "📝 วิธีเพิ่มงาน/นัดหมาย/กำหนดการ:\n\n" +
+                  "🔸 งานเดียว:\nเพิ่มงาน:ประชุม 15 14:00 ห้องประชุม\nนัดหมาย:พบลูกค้า 20 10:00 ออฟฟิศ\nกำหนดการ:ส่งรายงาน 25 16:00 แผนกบัญชี\n\n" +
+                  "🔸 หลายงาน (แยกด้วย |):\nเพิ่มงาน:ประชุม 15 14:00 ห้องประชุม|นัดหมาย:พบลูกค้า 20 10:00 ออฟฟิศ");
                 continue;
               }
 
               // แยกงานหลายงาน (ใช้ | เป็นตัวแยก)
-              const taskList = msg.replace(/^เพิ่มงาน[:：]/, "").split("|");
+              const taskList = msg.replace(/^(เพิ่มงาน|นัดหมาย|กำหนดการ)[:：]/, "").split("|");
               const results = [];
 
               for (const taskStr of taskList) {
-                const parts = taskStr.trim().split(/\s+/);
+                // ใช้ spacebar แทนจุลภาค - แต่ยังรองรับจุลภาคเดิมด้วย
+                let parts;
+                if (taskStr.includes(',')) {
+                  // รูปแบบเดิม (จุลภาค)
+                  parts = taskStr.trim().split(',').map(p => p.trim());
+                } else {
+                  // รูปแบบใหม่ (spacebar)
+                  parts = taskStr.trim().split(/\s+/);
+                }
                 const [title, date, start_time, location] = parts;
 
                 if (!title || !date || !start_time) {
@@ -1238,7 +1369,7 @@ async function deleteUser(){
  * Calendar (Public HTML)
  * ========================= */
 function renderPublicCalendarPage(url) {
-  const view = (url.searchParams.get("view") || "day").toLowerCase(); // day|week|month
+  const view = (url.searchParams.get("view") || "month").toLowerCase(); // day|week|month
   const date = url.searchParams.get("date") || new Date().toISOString().slice(0,10);
   return `<!doctype html>
 <html lang="th">
@@ -1742,8 +1873,10 @@ async function assertAdminSeedAuth(env, authHeader) {
 }
 
 async function seedUsersAndTargets(env) {
-  // Create tables if not exist
-  await env.schedule_db.exec(`
+  const now = new Date().toISOString();
+  
+  // Create tables one by one
+  await env.schedule_db.prepare(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -1752,8 +1885,10 @@ async function seedUsersAndTargets(env) {
       line_user_id TEXT UNIQUE,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
+    )
+  `).run();
 
+  await env.schedule_db.prepare(`
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
@@ -1761,8 +1896,10 @@ async function seedUsersAndTargets(env) {
       color TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
+    )
+  `).run();
 
+  await env.schedule_db.prepare(`
     CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -1777,39 +1914,31 @@ async function seedUsersAndTargets(env) {
       status TEXT CHECK (status IN ('planned', 'in_progress', 'completed', 'cancelled')),
       attend_status TEXT CHECK (attend_status IN ('yes', 'no')),
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (category_id) REFERENCES categories(id)
-    );
+      updated_at TEXT NOT NULL
+    )
+  `).run();
 
+  await env.schedule_db.prepare(`
     CREATE TABLE IF NOT EXISTS notifications_sent (
       id TEXT PRIMARY KEY,
       schedule_id TEXT,
       type TEXT NOT NULL,
       target TEXT NOT NULL,
       sent_at TEXT NOT NULL
-    );
+    )
+  `).run();
 
+  await env.schedule_db.prepare(`
     CREATE TABLE IF NOT EXISTS line_targets (
       id TEXT PRIMARY KEY,
       line_user_id TEXT UNIQUE NOT NULL,
       display_name TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS line_targets (
-      id TEXT PRIMARY KEY,
-      line_user_id TEXT UNIQUE NOT NULL,
-      display_name TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
+    )
+  `).run();
 
   console.log('Tables created successfully');
-
-  // Insert default data
-  const now = new Date().toISOString();
 
   // Categories
   await env.schedule_db.prepare(`
@@ -1824,15 +1953,12 @@ async function seedUsersAndTargets(env) {
   console.log('Categories inserted');
 
   // Default users
-  const secretaryKey = env.SECRETARY_API_KEY || '794311';
-
-  // Insert if not exists
   await env.schedule_db.prepare(`
     INSERT OR IGNORE INTO users (id, name, role, api_key, line_user_id, created_at, updated_at)
     VALUES
-      ('00000000-0000-0000-0000-000000000001', 'เลขานุการ', 'secretary', ?, NULL, ?, ?),
+      ('00000000-0000-0000-0000-000000000001', 'เลขานุการ', 'secretary', NULL, NULL, ?, ?),
       ('00000000-0000-0000-0000-000000000002', 'หัวหน้า', 'boss', NULL, NULL, ?, ?)
-  `).bind(secretaryKey, now, now, now, now).run();
+  `).bind(now, now, now, now).run();
 
   console.log('Default users inserted');
 }
@@ -1840,15 +1966,7 @@ async function seedUsersAndTargets(env) {
 /* =========================
  * D1 helpers (app logic)
  * ========================= */
-async function assertSecretaryByApiKey(env, authHeader) {
-  if (!authHeader) throw new Error("missing Authorization header");
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  const row = await env.schedule_db
-    .prepare("SELECT role FROM users WHERE api_key = ? LIMIT 1")
-    .bind(token)
-    .first();
-  if (!row || row.role !== "secretary") throw new Error("unauthorized: secretary api_key required");
-}
+
 
 async function getUserRoleByLineId(env, lineUserId) {
   const row = await env.schedule_db
@@ -2116,7 +2234,7 @@ function buildHelpFlex() {
       contents: [
         { type: "text", text: "📝 คู่มือการใช้งาน", weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
         { type: "separator", margin: "lg", color: "#334155" },
-        { type: "text", text: "กรุณาพิมพ์ตัวเลข 1-4 เพื่อเลือกฟังก์ชัน:", size: "sm", color: "#94a3b8", align: "center", margin: "md" },
+        { type: "text", text: "กรุณาพิมพ์ตัวเลข 1-6 เพื่อเลือกฟังก์ชัน:", size: "sm", color: "#94a3b8", align: "center", margin: "md" },
         {
           type: "box", layout: "vertical", spacing: "md", margin: "lg",
           contents: [
@@ -2149,7 +2267,23 @@ function buildHelpFlex() {
               backgroundColor: "#1f2937", cornerRadius: "8px",
               contents: [
                 { type: "text", text: "4", size: "lg", color: "#ef4444", weight: "bold", flex: 0 },
-                { type: "text", text: "วิธีเพิ่มงานด่วน", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+                { type: "text", text: "วิธีส่งข้อความให้เลขา", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+              ]
+            },
+            {
+              type: "box", layout: "horizontal", spacing: "sm", paddingAll: "12px",
+              backgroundColor: "#1f2937", cornerRadius: "8px",
+              contents: [
+                { type: "text", text: "5", size: "lg", color: "#8b5cf6", weight: "bold", flex: 0 },
+                { type: "text", text: "ดูตารางงานสัปดาห์นี้", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
+              ]
+            },
+            {
+              type: "box", layout: "horizontal", spacing: "sm", paddingAll: "12px",
+              backgroundColor: "#1f2937", cornerRadius: "8px",
+              contents: [
+                { type: "text", text: "6", size: "lg", color: "#06b6d4", weight: "bold", flex: 0 },
+                { type: "text", text: "ดูตารางงานเดือนนี้", size: "md", color: "#e5e7eb", flex: 1, paddingStart: "8px" }
               ]
             }
           ]
@@ -2335,6 +2469,371 @@ function escapeHtml(unsafe) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function buildWeeklyScheduleFlex(startDate, endDate, items) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  
+  const startDay = start.getDate();
+  const startMonth = thaiMonths[start.getMonth()];
+  const endDay = end.getDate();
+  const endMonth = thaiMonths[end.getMonth()];
+  const year = start.getFullYear() + 543;
+  
+  const weekRange = `${startDay} ${startMonth} - ${endDay} ${endMonth} ${year}`;
+  
+  // จัดกลุ่มงานตามวันที่
+  const groupedByDate = {};
+  items.forEach(item => {
+    if (!groupedByDate[item.date]) {
+      groupedByDate[item.date] = [];
+    }
+    groupedByDate[item.date].push(item);
+  });
+  
+  const categoryColors = {
+    '00000000-0000-0000-0000-000000000001': '#3b82f6',
+    '00000000-0000-0000-0000-000000000002': '#10b981',
+    '00000000-0000-0000-0000-000000000003': '#f59e0b',
+    '00000000-0000-0000-0000-000000000004': '#ef4444'
+  };
+  
+  const dayContents = [];
+  
+  // สร้างเนื้อหาสำหรับแต่ละวัน
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayItems = groupedByDate[dateStr] || [];
+    const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+    const dayName = thaiDays[d.getDay()];
+    const dayNum = d.getDate();
+    
+    if (dayItems.length > 0) {
+      dayContents.push({
+        type: "box", layout: "vertical", spacing: "xs", margin: "md",
+        paddingAll: "12px", backgroundColor: "#1f2937", cornerRadius: "8px",
+        contents: [
+          { type: "text", text: `${dayName} ${dayNum}`, weight: "bold", size: "md", color: "#f8fafc" },
+          { type: "separator", margin: "sm", color: "#374151" },
+          ...dayItems.map((item, i) => {
+            const time = item.end_time ? `${item.start_time}–${item.end_time}` : item.start_time;
+            const color = categoryColors[item.category_id] || '#6b7280';
+            return {
+              type: "box", layout: "horizontal", spacing: "sm", margin: "xs",
+              contents: [
+                {
+                  type: "box", layout: "vertical", flex: 0, width: "3px", height: "100%",
+                  backgroundColor: color, cornerRadius: "2px"
+                },
+                {
+                  type: "box", layout: "vertical", flex: 1, paddingStart: "6px",
+                  contents: [
+                    { type: "text", text: time || "-", size: "xs", color: "#94a3b8", weight: "bold" },
+                    { type: "text", text: item.title, size: "sm", color: "#e5e7eb", wrap: true, maxLines: 2 },
+                    { type: "text", text: item.place || "-", size: "xs", color: "#6b7280" }
+                  ]
+                }
+              ]
+            };
+          })
+        ]
+      });
+    }
+  }
+  
+  if (dayContents.length === 0) {
+    dayContents.push({
+      type: "text", text: "ไม่มีงานในสัปดาห์นี้", size: "md", color: "#64748b", align: "center", margin: "xl"
+    });
+  }
+  
+  return {
+    type: "bubble",
+    size: "giga",
+    body: {
+      type: "box", layout: "vertical", backgroundColor: "#0f172a", paddingAll: "16px",
+      contents: [
+        {
+          type: "box", layout: "vertical", spacing: "sm",
+          contents: [
+            { type: "text", text: "📅 ตารางงานสัปดาห์นี้", weight: "bold", size: "lg", color: "#f8fafc", align: "center" },
+            { type: "text", text: weekRange, size: "sm", color: "#94a3b8", align: "center" }
+          ]
+        },
+        { type: "separator", margin: "lg", color: "#334155" },
+        { type: "box", layout: "vertical", spacing: "xs", contents: dayContents }
+      ]
+    }
+  };
+}
+
+async function sendCalendarImage(env, replyToken, startDate, endDate, items, period) {
+  try {
+    // สร้าง HTML สำหรับปฏิทิน
+    const calendarHTML = generateCalendarHTML(startDate, endDate, items, period);
+    
+    // ถ้ามี Browser Rendering API ให้ใช้
+    if (env.CF_ACCOUNT_ID && env.CF_BR_TOKEN) {
+      const { renderToPNGBase64 } = await import('./lineoa.js');
+      const imageBase64 = await renderToPNGBase64(env, calendarHTML);
+      
+      // อัพโหลดภาพไปยัง temporary storage หรือใช้ data URL
+      const imageUrl = `data:image/png;base64,${imageBase64}`;
+      
+      // ส่งภาพผ่าน LINE
+      await replyLineImage(env, replyToken, imageUrl);
+    } else {
+      // ถ้าไม่มี Browser Rendering ให้ส่งเป็น text แทน
+      const textSummary = generateTextSummary(startDate, endDate, items, period);
+      await replyText(env, replyToken, textSummary);
+    }
+  } catch (error) {
+    console.error('Error sending calendar image:', error);
+    // ส่งเป็น text แทนถ้าเกิดข้อผิดพลาด
+    const textSummary = generateTextSummary(startDate, endDate, items, period);
+    await replyText(env, replyToken, textSummary);
+  }
+}
+
+function generateCalendarHTML(startDate, endDate, items, period) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  
+  const month = thaiMonths[start.getMonth()];
+  const year = start.getFullYear() + 543;
+  
+  // จัดกลุ่มงานตามวันที่
+  const groupedByDate = {};
+  items.forEach(item => {
+    if (!groupedByDate[item.date]) {
+      groupedByDate[item.date] = [];
+    }
+    groupedByDate[item.date].push(item);
+  });
+  
+  let calendarRows = '';
+  
+  // สร้างปฏิทินแบบตาราง
+  const firstDay = new Date(start.getFullYear(), start.getMonth(), 1);
+  const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // จันทร์ = 0
+  
+  let currentDate = 1;
+  const totalDays = lastDay.getDate();
+  
+  for (let week = 0; week < 6; week++) {
+    let weekRow = '<tr>';
+    
+    for (let day = 0; day < 7; day++) {
+      if ((week === 0 && day < startDay) || currentDate > totalDays) {
+        weekRow += '<td class="empty"></td>';
+      } else {
+        const dateStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(currentDate).padStart(2, '0')}`;
+        const dayItems = groupedByDate[dateStr] || [];
+        
+        let cellContent = `<div class="day-number">${currentDate}</div>`;
+        
+        if (dayItems.length > 0) {
+          cellContent += '<div class="tasks">';
+          dayItems.slice(0, 3).forEach(item => {
+            const time = item.start_time ? item.start_time.slice(0, 5) : '';
+            cellContent += `<div class="task">${time} ${item.title}</div>`;
+          });
+          if (dayItems.length > 3) {
+            cellContent += `<div class="more">+${dayItems.length - 3} อื่นๆ</div>`;
+          }
+          cellContent += '</div>';
+        }
+        
+        weekRow += `<td class="day-cell">${cellContent}</td>`;
+        currentDate++;
+      }
+    }
+    
+    weekRow += '</tr>';
+    calendarRows += weekRow;
+    
+    if (currentDate > totalDays) break;
+  }
+  
+  return `<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ปฏิทิน${period}</title>
+    <style>
+        body {
+            font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            width: 1200px;
+            height: 800px;
+        }
+        .calendar-container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            height: calc(100% - 60px);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .title {
+            font-size: 36px;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 24px;
+            color: #4a5568;
+        }
+        .calendar {
+            width: 100%;
+            border-collapse: collapse;
+            height: calc(100% - 120px);
+        }
+        .calendar th {
+            background: #4a5568;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .calendar td {
+            border: 1px solid #e2e8f0;
+            vertical-align: top;
+            width: 14.28%;
+            height: 100px;
+            position: relative;
+        }
+        .day-cell {
+            padding: 8px;
+            background: #f7fafc;
+        }
+        .empty {
+            background: #edf2f7;
+        }
+        .day-number {
+            font-size: 16px;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+        .tasks {
+            font-size: 11px;
+        }
+        .task {
+            background: #bee3f8;
+            color: #2b6cb0;
+            padding: 2px 4px;
+            margin: 1px 0;
+            border-radius: 3px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .more {
+            color: #718096;
+            font-style: italic;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="calendar-container">
+        <div class="header">
+            <div class="title">ปฏิทินงาน${period}</div>
+            <div class="subtitle">${month} ${year}</div>
+        </div>
+        <table class="calendar">
+            <thead>
+                <tr>
+                    <th>จันทร์</th>
+                    <th>อังคาร</th>
+                    <th>พุธ</th>
+                    <th>พฤหัสบดี</th>
+                    <th>ศุกร์</th>
+                    <th>เสาร์</th>
+                    <th>อาทิตย์</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${calendarRows}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>`;
+}
+
+function generateTextSummary(startDate, endDate, items, period) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  
+  const month = thaiMonths[start.getMonth()];
+  const year = start.getFullYear() + 543;
+  
+  let summary = `📅 สรุปงาน${period} (${month} ${year})\n\n`;
+  
+  if (items.length === 0) {
+    summary += `ไม่มีงานใน${period}`;
+    return summary;
+  }
+  
+  // จัดกลุ่มตามวันที่
+  const groupedByDate = {};
+  items.forEach(item => {
+    if (!groupedByDate[item.date]) {
+      groupedByDate[item.date] = [];
+    }
+    groupedByDate[item.date].push(item);
+  });
+  
+  // แสดงรายการตามวันที่
+  Object.keys(groupedByDate).sort().forEach(dateStr => {
+    const date = new Date(dateStr);
+    const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+    const dayName = thaiDays[date.getDay()];
+    const day = date.getDate();
+    
+    summary += `\n🗓️ ${dayName} ${day} ${month}\n`;
+    
+    groupedByDate[dateStr].forEach((item, i) => {
+      const time = item.end_time ? `${item.start_time}–${item.end_time}` : item.start_time;
+      const place = item.place ? ` · ${item.place}` : '';
+      summary += `${i + 1}. ${time} ${item.title}${place}\n`;
+    });
+  });
+  
+  return summary;
+}
+
+async function replyLineImage(env, replyToken, imageUrl) {
+  const url = "https://api.line.me/v2/bot/message/reply";
+  const headers = { "content-type": "application/json", Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` };
+  const body = { 
+    replyToken, 
+    messages: [{ 
+      type: "image", 
+      originalContentUrl: imageUrl, 
+      previewImageUrl: imageUrl 
+    }] 
+  };
+  await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
 }
 
 function mapCategoryTokenToId(tok) {

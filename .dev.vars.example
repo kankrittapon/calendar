@@ -1,0 +1,8 @@
+CLOUDFLARE_ACCOUNT_ID=your_account_id_here
+CLOUDFLARE_DATABASE_ID=your_database_id_here
+LINE_CHANNEL_ACCESS_TOKEN=your_line_token_here
+LINE_CHANNEL_SECRET=your_line_secret_here
+SEED_ADMIN_TOKEN=your_admin_token_here
+AGENDA_FORMAT=flex
+TZ=Asia/Bangkok
+RENDER_MODE=CLOUDFLARE

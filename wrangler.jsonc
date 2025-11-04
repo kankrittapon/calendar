@@ -1,9 +1,10 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "schedule-worker",
+	"name": "schedule-worker-prod",
+	"account_id": "e58b2913deacac47b7350d298394cf82",
 	"main": "src/index.js",
 	"compatibility_date": "2025-01-15",
-	"account_id": "e58b2913deacac47b7350d298394cf82",
+
 	"observability": {
 		"enabled": true
 	},
@@ -16,7 +17,7 @@
 		}
 	],
   "triggers": {
-    "crons": ["*/5 * * * *", "30 1 * * *", "0 13 * * *"]},
+    "crons": ["30 1 * * *", "0 13 * * *"]},
   "vars": {
     "TZ": "Asia/Bangkok",
 	"RENDER_MODE": "CLOUDFLARE"

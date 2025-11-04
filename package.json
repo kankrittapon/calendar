@@ -4,8 +4,9 @@
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
+		"deploy:dev": "wrangler deploy --config wrangler.dev.jsonc",
+		"dev": "wrangler dev --config wrangler.dev.jsonc",
+		"start": "wrangler dev --config wrangler.dev.jsonc",
 		"test": "vitest"
 	},
 	"devDependencies": {
