@@ -804,12 +804,7 @@ export default {
               continue;
             }
 
-            // Default case - ไม่ทำอะไร (ลบการส่งข้อความอัตโนมัติ)
-            console.log(`Unhandled message from boss: ${msg}`);
-            await replyText(env, ev.replyToken, "ไม่เข้าใจคำสั่ง กรุณาพิมพ์ 'help' เพื่อดูคำสั่งที่ใช้ได้");
-            continue;
-
-            // Quick Work
+            // งานด่วน
             if (msg.startsWith("งานด่วน:")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
@@ -820,11 +815,15 @@ export default {
                 continue;
               }
 
-              // ส่งแจ้งเตือนไปเลขา (ใช้ LINE หรือ notification system)
               await notifySecretaryUrgentTask(env, task);
               await replyText(env, ev.replyToken, `✅ ส่งงานด่วนแล้ว: ${task}`);
               continue;
             }
+
+            // Default case - ไม่เข้าใจคำสั่ง
+            console.log(`Unhandled message from boss: ${msg}`);
+            await replyText(env, ev.replyToken, "ไม่เข้าใจคำสั่ง กรุณาพิมพ์ 'help' เพื่อดูคำสั่งที่ใช้ได้");
+            continue;
 
             // เพิ่มงานผ่านข้อความ (Boss และ Secretary)
             if (msg.startsWith("เพิ่มงาน") || msg.startsWith("นัดหมาย") || msg.startsWith("กำหนดการ")) {
