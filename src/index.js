@@ -6,6 +6,50 @@
 
 import { renderSecretaryPage } from "./indexsecretary.js"; // หน้าเลขา (แยกไฟล์)
 
+// CSRF Token validation
+function validateCSRFToken(request, requiredToken) {
+  const token = request.headers.get('x-csrf-token') || request.headers.get('csrf-token');
+  return token === requiredToken;
+}
+
+// Input validation helper
+function validateInput(input, type, maxLength = 1000) {
+  if (!input || typeof input !== 'string') return false;
+  if (input.length > maxLength) return false;
+  
+  switch (type) {
+    case 'date':
+      return /^\d{4}-\d{2}-\d{2}$/.test(input);
+    case 'time':
+      return /^\d{2}:\d{2}$/.test(input);
+    case 'uuid':
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input);
+    default:
+      return input.trim().length > 0;
+  }
+}
+
+// Timeout wrapper for fetch requests
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw error;
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -23,67 +67,158 @@ export default {
 
       /* ===== LINE Targets APIs ===== */
       if (pathname === "/admin/line-targets" && method === "GET") {
-        await assertAdminSeedAuth(env, request.headers.get("authorization"));
-        const targets = await env.schedule_db.prepare(
-          "SELECT * FROM line_targets ORDER BY created_at DESC"
-        ).all();
-        return json({ ok: true, data: targets.results });
+        try {
+          await assertAdminSeedAuth(env, request.headers.get("authorization"));
+          const targets = await env.schedule_db.prepare(
+            "SELECT * FROM line_targets ORDER BY created_at DESC"
+          ).all();
+          return json({ ok: true, data: targets.results || [] });
+        } catch (error) {
+          console.error('Error loading line targets:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
 
       if (pathname === "/admin/line-target/delete" && method === "DELETE") {
-        await assertAdminSeedAuth(env, request.headers.get("authorization"));
-        const { lineUserId } = await safeJson(request);
-        if (!lineUserId) throw new Error("lineUserId required");
+        try {
+          await assertAdminSeedAuth(env, request.headers.get("authorization"));
+          
+          // CSRF Protection
+          if (!validateCSRFToken(request, env.CSRF_TOKEN)) {
+            return json({ ok: false, error: "Invalid CSRF token" }, 403);
+          }
+          
+          const { lineUserId } = await safeJson(request);
+          if (!validateInput(lineUserId, 'default', 100)) {
+            return json({ ok: false, error: "Invalid lineUserId" }, 400);
+          }
 
-        await env.schedule_db.prepare(
-          "DELETE FROM line_targets WHERE line_user_id = ?"
-        ).bind(lineUserId).run();
-        return json({ ok: true });
+          const result = await env.schedule_db.prepare(
+            "DELETE FROM line_targets WHERE line_user_id = ?"
+          ).bind(lineUserId).run();
+          
+          return json({ ok: true, deleted: result.meta.changes });
+        } catch (error) {
+          console.error('Error deleting line target:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
       
       if (pathname === "/admin/user/add-from-target" && method === "POST") {
-        await assertAdminSeedAuth(env, request.headers.get("authorization"));
-        const { lineUserId, name, role } = await safeJson(request);
-        if (!lineUserId || !name || !role) throw new Error("lineUserId, name and role required");
-        if (!["boss", "secretary"].includes(role)) throw new Error("invalid role");
+        try {
+          await assertAdminSeedAuth(env, request.headers.get("authorization"));
+          
+          // CSRF Protection
+          if (!validateCSRFToken(request, env.CSRF_TOKEN)) {
+            return json({ ok: false, error: "Invalid CSRF token" }, 403);
+          }
+          
+          const { lineUserId, name, role } = await safeJson(request);
+          
+          // Input validation
+          if (!validateInput(lineUserId, 'default', 100) || 
+              !validateInput(name, 'default', 200) || 
+              !validateInput(role, 'default', 20)) {
+            return json({ ok: false, error: "Invalid input parameters" }, 400);
+          }
+          
+          if (!["boss", "secretary"].includes(role)) {
+            return json({ ok: false, error: "Invalid role" }, 400);
+          }
 
-        // เพิ่ม user จาก target
-        const id = crypto.randomUUID();
-        const now = new Date().toISOString();
-        await env.schedule_db.prepare(
-          "INSERT INTO users (id, name, role, line_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(id, name, role, lineUserId, now, now).run();
+          // เพิ่ม user จาก target
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+          await env.schedule_db.prepare(
+            "INSERT INTO users (id, name, role, line_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+          ).bind(id, name, role, lineUserId, now, now).run();
 
-        // ลบ target เมื่อเพิ่ม user แล้ว
-        await env.schedule_db.prepare(
-          "DELETE FROM line_targets WHERE line_user_id = ?"
-        ).bind(lineUserId).run();
+          // ลบ target เมื่อเพิ่ม user แล้ว
+          await env.schedule_db.prepare(
+            "DELETE FROM line_targets WHERE line_user_id = ?"
+          ).bind(lineUserId).run();
 
-        return json({ ok: true });
+          return json({ ok: true, userId: id });
+        } catch (error) {
+          console.error('Error adding user from target:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
 
       /* ===== Secretary APIs ===== */
       if (pathname === "/schedules" && method === "POST") {
-        const body = await safeJson(request);
-        const created = await createSchedule(env, body);
+        try {
+          const body = await safeJson(request);
+          
+          // Input validation
+          if (!body || typeof body !== 'object') {
+            return json({ ok: false, error: "Invalid request body" }, 400);
+          }
+          
+          if (!validateInput(body.title, 'default', 500) || 
+              !validateInput(body.date, 'date') || 
+              !validateInput(body.start_time, 'time')) {
+            return json({ ok: false, error: "Invalid input parameters" }, 400);
+          }
+          
+          const created = await createSchedule(env, body);
 
-        // ส่งแจ้งเตือนให้ boss เมื่อเพิ่มงานใหม่
-        await notifyBossNewSchedule(env, created.id);
+          // ส่งแจ้งเตือนให้ boss เมื่อเพิ่มงานใหม่
+          try {
+            await notifyBossNewSchedule(env, created.id);
+          } catch (notifyError) {
+            console.error('Failed to notify boss:', notifyError);
+            // Continue execution even if notification fails
+          }
 
-        return json({ ok: true, data: created }, 201);
+          return json({ ok: true, data: created }, 201);
+        } catch (error) {
+          console.error('Error creating schedule:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
 
       if (pathname.startsWith("/schedules/") && method === "PATCH") {
-        const id = pathname.split("/")[2];
-        const body = await safeJson(request);
-        const updated = await updateSchedule(env, id, body);
-        return json({ ok: true, data: updated });
+        try {
+          const id = pathname.split("/")[2];
+          
+          if (!validateInput(id, 'uuid')) {
+            return json({ ok: false, error: "Invalid schedule ID" }, 400);
+          }
+          
+          const body = await safeJson(request);
+          
+          if (!body || typeof body !== 'object') {
+            return json({ ok: false, error: "Invalid request body" }, 400);
+          }
+          
+          const updated = await updateSchedule(env, id, body);
+          return json({ ok: true, data: updated });
+        } catch (error) {
+          console.error('Error updating schedule:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
 
       if (pathname.startsWith("/schedules/") && method === "DELETE") {
-        const id = pathname.split("/")[2];
-        const deleted = await deleteSchedule(env, id);
-        return json({ ok: true, data: deleted });
+        try {
+          const id = pathname.split("/")[2];
+          
+          if (!validateInput(id, 'uuid')) {
+            return json({ ok: false, error: "Invalid schedule ID" }, 400);
+          }
+          
+          // CSRF Protection for DELETE operations
+          if (!validateCSRFToken(request, env.CSRF_TOKEN)) {
+            return json({ ok: false, error: "Invalid CSRF token" }, 403);
+          }
+          
+          const deleted = await deleteSchedule(env, id);
+          return json({ ok: true, data: deleted });
+        } catch (error) {
+          console.error('Error deleting schedule:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
 
       if (pathname === "/schedules" && method === "GET") {
@@ -2081,41 +2216,55 @@ async function setAttendStatus(env, scheduleId, value) {
 }
 
 async function createSchedule(env, body) {
-  if (!body || typeof body !== 'object') {
-    throw new Error("Invalid request body");
-  }
+  const startTime = Date.now();
   
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const title = String(body.title || "").trim();
-  const date = String(body.date || "").trim();
-  const start_time = String(body.start_time || "").trim();
-  const end_time = body.end_time ? String(body.end_time).trim() : null;
-  const location = body.location ? String(body.location).trim() : null;
-  const place = body.place ? String(body.place).trim() : null;
-  const category_id = body.category_id ? String(body.category_id).trim() : null;
-  const assignees = body.assignees ?? null;
-  const notes = body.notes ?? null;
-  
-  if (!title || !date || !start_time) {
-    throw new Error("title, date, start_time are required");
-  }
-  
-  // Validate date format
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error("Invalid date format. Use YYYY-MM-DD");
-  }
-  
-  // Validate time format
-  if (!/^\d{2}:\d{2}$/.test(start_time)) {
-    throw new Error("Invalid start_time format. Use HH:MM");
-  }
+  try {
+    if (!body || typeof body !== 'object') {
+      throw new Error("Invalid request body");
+    }
+    
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const title = String(body.title || "").trim();
+    const date = String(body.date || "").trim();
+    const start_time = String(body.start_time || "").trim();
+    const end_time = body.end_time ? String(body.end_time).trim() : null;
+    const location = body.location ? String(body.location).trim() : null;
+    const place = body.place ? String(body.place).trim() : null;
+    const category_id = body.category_id ? String(body.category_id).trim() : null;
+    const assignees = body.assignees ?? null;
+    const notes = body.notes ?? null;
+    
+    // Enhanced validation
+    if (!title || title.length > 500) {
+      throw new Error("Invalid title");
+    }
+    
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new Error("Invalid date format. Use YYYY-MM-DD");
+    }
+    
+    if (!start_time || !/^\d{2}:\d{2}$/.test(start_time)) {
+      throw new Error("Invalid start_time format. Use HH:MM");
+    }
+    
+    if (end_time && !/^\d{2}:\d{2}$/.test(end_time)) {
+      throw new Error("Invalid end_time format. Use HH:MM");
+    }
 
-  await env.schedule_db.prepare(
-    "INSERT INTO schedules (id, title, date, start_time, end_time, location, place, category_id, assignees, notes, status, attend_status, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'planned',NULL,?11,?12)"
-  ).bind(id, title, date, start_time, end_time, location, place, category_id, assignees, notes, now, now).run();
+    const result = await env.schedule_db.prepare(
+      "INSERT INTO schedules (id, title, date, start_time, end_time, location, place, category_id, assignees, notes, status, attend_status, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'planned',NULL,?11,?12)"
+    ).bind(id, title, date, start_time, end_time, location, place, category_id, assignees, notes, now, now).run();
 
-  return { id };
+    const duration = Date.now() - startTime;
+    console.log(`[createSchedule] Created schedule ${id} in ${duration}ms`);
+    
+    return { id, created: true };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`[createSchedule] Error after ${duration}ms:`, error.message);
+    throw error;
+  }
 }
 
 async function updateSchedule(env, id, body) {
@@ -2380,6 +2529,8 @@ function buildScheduleFlexWithActions(dateStr, items) {
 }
 
 async function pushLineText(env, lineUserId, text) {
+  const startTime = Date.now();
+  
   if (!lineUserId || !text) {
     console.error('[pushLineText] Missing required parameters');
     return;
@@ -2397,19 +2548,28 @@ async function pushLineText(env, lineUserId, text) {
   const body = { to: lineUserId, messages: [{ type: "text", text }] };
 
   try {
-    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const res = await fetchWithTimeout(url, { 
+      method: "POST", 
+      headers, 
+      body: JSON.stringify(body) 
+    }, 15000);
+    
     if (!res.ok) {
       const msg = await res.text().catch(() => res.statusText);
       console.error("[pushLineText] LINE push error:", res.status, msg);
     } else {
-      console.log(`[pushLineText] Successfully sent to ${lineUserId}`);
+      const duration = Date.now() - startTime;
+      console.log(`[pushLineText] Successfully sent to ${lineUserId} in ${duration}ms`);
     }
   } catch (error) {
-    console.error("[pushLineText] Network error:", error.message);
+    const duration = Date.now() - startTime;
+    console.error(`[pushLineText] Network error after ${duration}ms:`, error.message);
   }
 }
 
 async function pushLineFlex(env, lineUserId, bubble) {
+  const startTime = Date.now();
+  
   if (!lineUserId || !bubble) {
     console.error('[pushLineFlex] Missing required parameters');
     return;
@@ -2427,15 +2587,22 @@ async function pushLineFlex(env, lineUserId, bubble) {
   const body = { to: lineUserId, messages: [{ type: "flex", altText: "สรุปงานวันนี้", contents: bubble }] };
 
   try {
-    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const res = await fetchWithTimeout(url, { 
+      method: "POST", 
+      headers, 
+      body: JSON.stringify(body) 
+    }, 15000);
+    
     if (!res.ok) {
       const msg = await res.text().catch(() => res.statusText);
       console.error("[pushLineFlex] LINE push FLEX error:", res.status, msg);
     } else {
-      console.log(`[pushLineFlex] Successfully sent flex to ${lineUserId}`);
+      const duration = Date.now() - startTime;
+      console.log(`[pushLineFlex] Successfully sent flex to ${lineUserId} in ${duration}ms`);
     }
   } catch (error) {
-    console.error("[pushLineFlex] Network error:", error.message);
+    const duration = Date.now() - startTime;
+    console.error(`[pushLineFlex] Network error after ${duration}ms:`, error.message);
   }
 }
 

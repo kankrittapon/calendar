@@ -1,34 +1,102 @@
 // src/lineoa.js
 
+// Input validation for LINE API
+function validateLineInput(to, content) {
+  if (!to || typeof to !== 'string' || to.length > 100) {
+    throw new Error('Invalid LINE user ID');
+  }
+  if (!content || typeof content !== 'string' || content.length > 5000) {
+    throw new Error('Invalid message content');
+  }
+}
+
+// Timeout wrapper for LINE API calls
+async function lineApiCall(url, options, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('LINE API timeout');
+    }
+    throw error;
+  }
+}
+
 // ===== LINE push: text =====
 export async function linePushText(env, to, text) {
-  if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new Error("LINE token not set");
-  const res = await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
-  });
-  if (!res.ok) throw new Error(`LINE push text failed: ${res.status} ${await res.text()}`);
+  try {
+    if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+      throw new Error("LINE token not set");
+    }
+    
+    validateLineInput(to, text);
+    
+    const res = await lineApiCall("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`LINE push text failed: ${res.status} ${errorText}`);
+    }
+    
+    console.log(`Successfully sent LINE message to ${to}`);
+  } catch (error) {
+    console.error('LINE push text error:', error);
+    throw error;
+  }
 }
 
 // ===== LINE push: image by URL =====
 export async function linePushImageByUrl(env, to, url) {
-  if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new Error("LINE token not set");
-  const res = await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      to,
-      messages: [{ type: "image", originalContentUrl: url, previewImageUrl: url }],
-    }),
-  });
-  if (!res.ok) throw new Error(`LINE push image failed: ${res.status} ${await res.text()}`);
+  try {
+    if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+      throw new Error("LINE token not set");
+    }
+    
+    validateLineInput(to, url);
+    
+    // Validate URL format
+    if (!url.startsWith('https://')) {
+      throw new Error('Invalid image URL - must use HTTPS');
+    }
+    
+    const res = await lineApiCall("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        to,
+        messages: [{ type: "image", originalContentUrl: url, previewImageUrl: url }],
+      }),
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`LINE push image failed: ${res.status} ${errorText}`);
+    }
+    
+    console.log(`Successfully sent LINE image to ${to}`);
+  } catch (error) {
+    console.error('LINE push image error:', error);
+    throw error;
+  }
 }
 
 // ===== LINE push: Flex carousel =====
@@ -107,48 +175,90 @@ export function flexBubbleForTask(task) {
 }
 
 export async function linePushFlexCarousel(env, to, bubbles) {
-  if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new Error("LINE token not set");
-  const message = {
-    to,
-    messages: [{
-      type: "flex",
-      altText: "ตารางงานวันนี้",
-      contents: { type: "carousel", contents: bubbles }
-    }]
-  };
-  const res = await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      "Content-Type":"application/json",
-      "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify(message),
-  });
-  if (!res.ok) throw new Error(`LINE push flex failed: ${res.status} ${await res.text()}`);
+  try {
+    if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+      throw new Error("LINE token not set");
+    }
+    
+    validateLineInput(to, 'flex message');
+    
+    if (!Array.isArray(bubbles) || bubbles.length === 0) {
+      throw new Error('Invalid bubbles array');
+    }
+    
+    const message = {
+      to,
+      messages: [{
+        type: "flex",
+        altText: "ตารางงานวันนี้",
+        contents: { type: "carousel", contents: bubbles }
+      }]
+    };
+    
+    const res = await lineApiCall("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type":"application/json",
+        "Authorization": `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify(message),
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`LINE push flex failed: ${res.status} ${errorText}`);
+    }
+    
+    console.log(`Successfully sent LINE flex message to ${to}`);
+  } catch (error) {
+    console.error('LINE push flex error:', error);
+    throw error;
+  }
 }
 
 // ===== User profile (optional pretty name) =====
 export async function getUserProfile(env, userId) {
-  if (!token) return null;
-  const res = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
-    headers: { Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` },
-  });
-  if (!res.ok) return null;
-  
-  // Get profile data
-  const profile = await res.json().catch(() => null);
-  
-  // If we got profile data, update/insert into line_targets
-  if (profile && env.schedule_db) {
-    await env.schedule_db
-      .prepare(`INSERT OR REPLACE INTO line_targets (line_user_id, display_name, created_at, updated_at) 
-                VALUES (?1, ?2, COALESCE((SELECT created_at FROM line_targets WHERE line_user_id = ?1), datetime('now')), datetime('now'))`)
-      .bind(profile.userId, profile.displayName)
-      .run()
-      .catch(console.error);
+  try {
+    if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+      console.error('LINE_CHANNEL_ACCESS_TOKEN not set');
+      return null;
+    }
+    
+    if (!userId || typeof userId !== 'string') {
+      console.error('Invalid userId provided');
+      return null;
+    }
+    
+    const res = await lineApiCall(`https://api.line.me/v2/bot/profile/${userId}`, {
+      headers: { Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` },
+    });
+    
+    if (!res.ok) {
+      console.error(`Failed to get LINE profile: ${res.status}`);
+      return null;
+    }
+    
+    // Get profile data
+    const profile = await res.json().catch(() => null);
+    
+    // If we got profile data, update/insert into line_targets
+    if (profile && env.schedule_db) {
+      try {
+        await env.schedule_db
+          .prepare(`INSERT OR REPLACE INTO line_targets (line_user_id, display_name, created_at, updated_at) 
+                    VALUES (?1, ?2, COALESCE((SELECT created_at FROM line_targets WHERE line_user_id = ?1), datetime('now')), datetime('now'))`)
+          .bind(profile.userId, profile.displayName)
+          .run();
+      } catch (dbError) {
+        console.error('Failed to update line_targets:', dbError);
+      }
+    }
+    
+    return profile;
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    return null;
   }
-  
-  return profile;
 }
 
 // ===== Verify LINE webhook signature =====
@@ -252,9 +362,10 @@ function escapeHTML(s="") {
 export async function sendUpcomingReminders(env) {
   console.log('[sendUpcomingReminders] Starting reminder check...');
   
-  const now = new Date();
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-  const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
+  try {
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+    const bangkok = new Date(utc + 7 * 60 * 60 * 1000);
   
   // หาเวลา 1-2 ชั่วโมงข้างหน้า
   const oneHourLater = new Date(bangkok.getTime() + 60 * 60 * 1000);
@@ -297,41 +408,44 @@ export async function sendUpcomingReminders(env) {
     return;
   }
   
-  // ส่งแจ้งเตือนให้แต่ละ Boss
-  for (const boss of bosses.results) {
-    for (const task of tasks) {
-      // ตรวจสอบว่าส่งแจ้งเตือนแล้วหรือยัง
-      const alreadySent = await env.schedule_db
-        .prepare("SELECT 1 FROM notifications_sent WHERE type='reminder' AND target=? AND schedule_id=? AND date(sent_at) = date('now','localtime') LIMIT 1")
-        .bind(boss.line_user_id, task.id)
-        .first();
-        
-      if (alreadySent) {
-        console.log(`[sendUpcomingReminders] Reminder already sent for task ${task.id} to ${boss.line_user_id}`);
-        continue;
-      }
-      
-      // สร้าง Flex Message สำหรับการแจ้งเตือน
-      const reminderBubble = buildReminderFlex(task);
-      
-      try {
-        await pushLineFlex(env, boss.line_user_id, reminderBubble);
-        console.log(`[sendUpcomingReminders] Sent reminder for task ${task.id} to ${boss.line_user_id}`);
-        
-        // บันทึกว่าส่งแจ้งเตือนแล้ว
-        const nid = crypto.randomUUID();
-        await env.schedule_db
-          .prepare("INSERT INTO notifications_sent (id, schedule_id, type, target, sent_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))")
-          .bind(nid, task.id, "reminder", boss.line_user_id)
-          .run();
+    // ส่งแจ้งเตือนให้แต่ละ Boss
+    for (const boss of bosses.results) {
+      for (const task of tasks) {
+        try {
+          // ตรวจสอบว่าส่งแจ้งเตือนแล้วหรือยัง
+          const alreadySent = await env.schedule_db
+            .prepare("SELECT 1 FROM notifications_sent WHERE type='reminder' AND target=? AND schedule_id=? AND date(sent_at) = date('now','localtime') LIMIT 1")
+            .bind(boss.line_user_id, task.id)
+            .first();
+            
+          if (alreadySent) {
+            console.log(`[sendUpcomingReminders] Reminder already sent for task ${task.id} to ${boss.line_user_id}`);
+            continue;
+          }
           
-      } catch (error) {
-        console.error(`[sendUpcomingReminders] Failed to send reminder for task ${task.id}:`, error);
+          // สร้าง Flex Message สำหรับการแจ้งเตือน
+          const reminderBubble = buildReminderFlex(task);
+          
+          await pushLineFlex(env, boss.line_user_id, reminderBubble);
+          console.log(`[sendUpcomingReminders] Sent reminder for task ${task.id} to ${boss.line_user_id}`);
+          
+          // บันทึกว่าส่งแจ้งเตือนแล้ว
+          const nid = crypto.randomUUID();
+          await env.schedule_db
+            .prepare("INSERT INTO notifications_sent (id, schedule_id, type, target, sent_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))")
+            .bind(nid, task.id, "reminder", boss.line_user_id)
+            .run();
+            
+        } catch (error) {
+          console.error(`[sendUpcomingReminders] Failed to send reminder for task ${task.id}:`, error);
+        }
       }
     }
+    
+    console.log('[sendUpcomingReminders] Reminder check completed');
+  } catch (error) {
+    console.error('[sendUpcomingReminders] Error in reminder check:', error);
   }
-  
-  console.log('[sendUpcomingReminders] Reminder check completed');
 }
 
 function buildReminderFlex(task) {

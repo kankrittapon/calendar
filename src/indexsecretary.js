@@ -99,61 +99,134 @@ const $ = (id) => document.getElementById(id);
 
 
 
-async function createSchedule(){
-  // use full ISO date input (YYYY-MM-DD) and normalize to Asia/Bangkok timezone
-  const dateInput = $('date').value;
-  if(!dateInput) return alert('กรุณาใส่วันที่');
-
-  // Convert to Asia/Bangkok timezone (UTC+7)
-  const date = new Date(dateInput);
-  const bangkokOffset = 7 * 60; // Bangkok is UTC+7
-  const userOffset = date.getTimezoneOffset();
-  const totalOffset = bangkokOffset + userOffset;
-  date.setMinutes(date.getMinutes() + totalOffset);
-  const normalizedDate = date.toISOString().slice(0,10);
-
-  const body = {
-    title: $('title').value,
-    date: normalizedDate,
-    start_time: $('start').value,
-    end_time: $('end').value || null,
-    place: $('place').value || null,
-    category_id: $('category').value || null,
-    notes: $('notes').value || null
-  };
-  const res = await fetch(base + '/schedules', {
-    method:'POST', headers: {'content-type':'application/json'},
-    body: JSON.stringify(body)
-  });
-  const j = await res.json().catch(()=>({}));
-  $('createMsg').innerText = res.ok ? '✅ สร้างแล้ว id=' + (j?.data?.id||'') : '❌ ' + (j?.error||res.status);
-  if(res.ok){ $('title').value=''; $('date').value=''; $('start').selectedIndex=0; $('end').selectedIndex=0; $('place').value=''; $('notes').value=''; loadList(); }
+// XSS Protection helper
+function escapeHtml(unsafe) {
+  if (!unsafe) return '';
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-async function loadList(){
-  let q = '';
-  if ($('qdate').value) {
-    // Normalize selected date to Asia/Bangkok timezone
-    const date = new Date($('qdate').value);
-    const bangkokOffset = 7 * 60;
+// Input validation
+function validateInput(value, type, maxLength = 1000) {
+  if (!value || typeof value !== 'string') return false;
+  if (value.length > maxLength) return false;
+  
+  switch (type) {
+    case 'date':
+      return /^\d{4}-\d{2}-\d{2}$/.test(value);
+    case 'time':
+      return /^\d{2}:\d{2}$/.test(value);
+    default:
+      return value.trim().length > 0;
+  }
+}
+
+async function createSchedule(){
+  try {
+    // use full ISO date input (YYYY-MM-DD) and normalize to Asia/Bangkok timezone
+    const dateInput = $('date').value;
+    if(!dateInput) return alert('กรุณาใส่วันที่');
+    
+    // Input validation
+    const title = $('title').value;
+    const startTime = $('start').value;
+    
+    if (!validateInput(title, 'default', 500)) {
+      return alert('ชื่อเรื่องไม่ถูกต้อง');
+    }
+    
+    if (!validateInput(dateInput, 'date')) {
+      return alert('รูปแบบวันที่ไม่ถูกต้อง');
+    }
+    
+    if (startTime && !validateInput(startTime, 'time')) {
+      return alert('รูปแบบเวลาไม่ถูกต้อง');
+    }
+
+    // Convert to Asia/Bangkok timezone (UTC+7)
+    const date = new Date(dateInput);
+    const bangkokOffset = 7 * 60; // Bangkok is UTC+7
     const userOffset = date.getTimezoneOffset();
     const totalOffset = bangkokOffset + userOffset;
     date.setMinutes(date.getMinutes() + totalOffset);
     const normalizedDate = date.toISOString().slice(0,10);
-    q = '?date=' + encodeURIComponent(normalizedDate);
+
+    const body = {
+      title: title.trim(),
+      date: normalizedDate,
+      start_time: startTime,
+      end_time: $('end').value || null,
+      place: $('place').value?.trim() || null,
+      category_id: $('category').value || null,
+      notes: $('notes').value?.trim() || null
+    };
+    
+    const res = await fetch(base + '/schedules', {
+      method:'POST', 
+      headers: {
+        'content-type':'application/json',
+        'x-csrf-token': window.csrfToken || ''
+      },
+      body: JSON.stringify(body)
+    });
+    
+    const j = await res.json().catch(()=>({}));
+    $('createMsg').innerHTML = res.ok ? 
+      '✅ สร้างแล้ว id=' + escapeHtml(j?.data?.id||'') : 
+      '❌ ' + escapeHtml(j?.error||res.status);
+      
+    if(res.ok){ 
+      $('title').value=''; 
+      $('date').value=''; 
+      $('start').selectedIndex=0; 
+      $('end').selectedIndex=0; 
+      $('place').value=''; 
+      $('notes').value=''; 
+      loadList(); 
+    }
+  } catch (error) {
+    console.error('Error creating schedule:', error);
+    $('createMsg').innerHTML = '❌ เกิดข้อผิดพลาด: ' + escapeHtml(error.message);
   }
-  const res = await fetch(base + '/schedules'+q);
-  const j = await res.json().catch(()=>({}));
-  const rows = (j?.data||[]).map((s,i)=>{
-    const time = s.end_time ? (s.start_time+'–'+s.end_time) : s.start_time;
-    const att = s.attend_status || '-';
-    const notes = s.notes || '-';
-    return '<tr>'+
-      '<td>'+ (s.date||'') +'</td>'+
-      '<td>'+ (time||'') +'</td>'+
-      '<td>'+ (s.title||'') +'</td>'+
-      '<td>'+ (s.place||'') +'</td>'+
-      '<td style="max-width:200px;word-wrap:break-word">'+ notes +'</td>'+
+}
+
+async function loadList(){
+  try {
+    let q = '';
+    if ($('qdate').value) {
+      // Normalize selected date to Asia/Bangkok timezone
+      const date = new Date($('qdate').value);
+      const bangkokOffset = 7 * 60;
+      const userOffset = date.getTimezoneOffset();
+      const totalOffset = bangkokOffset + userOffset;
+      date.setMinutes(date.getMinutes() + totalOffset);
+      const normalizedDate = date.toISOString().slice(0,10);
+      q = '?date=' + encodeURIComponent(normalizedDate);
+    }
+    
+    const res = await fetch(base + '/schedules'+q);
+    const j = await res.json().catch(()=>({}));
+    
+    if (!res.ok) {
+      console.error('Failed to load schedules:', j?.error || res.status);
+      $('list').innerHTML = '<tr><td colspan="9">โหลดข้อมูลไม่สำเร็จ</td></tr>';
+      return;
+    }
+    
+    const rows = (j?.data||[]).map((s,i)=>{
+      const time = s.end_time ? (escapeHtml(s.start_time)+'–'+escapeHtml(s.end_time)) : escapeHtml(s.start_time);
+      const att = s.attend_status || '-';
+      const notes = s.notes || '-';
+      return '<tr>'+
+        '<td>'+ escapeHtml(s.date||'') +'</td>'+
+        '<td>'+ (time||'') +'</td>'+
+        '<td>'+ escapeHtml(s.title||'') +'</td>'+
+        '<td>'+ escapeHtml(s.place||'') +'</td>'+
+        '<td style="max-width:200px;word-wrap:break-word">'+ escapeHtml(notes) +'</td>'+
       '<td>'+
         '<select onchange="updateCategory(\\''+s.id+'\\',this.value)" style="padding:4px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--text)">'+
           '<option value="00000000-0000-0000-0000-000000000001" '+(s.category_id==='00000000-0000-0000-0000-000000000001'?'selected':'')+'>งานในหน่วย</option>'+
@@ -181,9 +254,13 @@ async function loadList(){
         '<button onclick="editTask(\\''+s.id+'\\')" class="btn-edit" style="margin-right:4px;background:#f59e0b;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">แก้ไข</button>'+
         '<button onclick="deleteTask(\\''+s.id+'\\')" class="btn-delete" style="background:#ef4444;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">ลบ</button>'+
       '</td>'+
-    '</tr>';
-  }).join('');
-  $('list').innerHTML = rows;
+      '</tr>';
+    }).join('');
+    $('list').innerHTML = rows;
+  } catch (error) {
+    console.error('Error loading list:', error);
+    $('list').innerHTML = '<tr><td colspan="9">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>';
+  }
 }
 
 async function markDone(id){

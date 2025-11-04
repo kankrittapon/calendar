@@ -6,6 +6,9 @@
 	"observability": {
 		"enabled": true
 	},
+	"limits": {
+		"cpu_ms": 30000
+	},
 	"d1_databases": [
 		{
 			"binding": "schedule_db",
@@ -17,6 +20,8 @@
 
 	"vars": {
 		"TZ": "Asia/Bangkok",
-		"RENDER_MODE": "CLOUDFLARE"
+		"RENDER_MODE": "CLOUDFLARE",
+		"REQUEST_TIMEOUT": "15000",
+		"MAX_REQUEST_SIZE": "1048576"
 	}
 }
