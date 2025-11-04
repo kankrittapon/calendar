@@ -580,9 +580,9 @@ export default {
 
               const today = new Date();
               const startOfWeek = new Date(today);
-              startOfWeek.setDate(today.getDate() - today.getDay() + 1); // จันทร์
+              startOfWeek.setDate(today.getDate() - today.getDay() + 1);
               const endOfWeek = new Date(startOfWeek);
-              endOfWeek.setDate(startOfWeek.getDate() + 6); // อาทิตย์
+              endOfWeek.setDate(startOfWeek.getDate() + 6);
 
               const startDate = startOfWeek.toISOString().slice(0,10);
               const endDate = endOfWeek.toISOString().slice(0,10);
@@ -623,7 +623,6 @@ export default {
               if (items.length === 0) {
                 await replyText(env, ev.replyToken, "เดือนนี้ไม่มีงาน");
               } else {
-                // ส่งเป็นภาพปฏิทิน
                 await sendCalendarImage(env, ev.replyToken, startDate, endDate, items, "เดือนนี้");
               }
               continue;
@@ -820,11 +819,6 @@ export default {
               continue;
             }
 
-            // Default case - ไม่เข้าใจคำสั่ง
-            console.log(`Unhandled message from boss: ${msg}`);
-            await replyText(env, ev.replyToken, "ไม่เข้าใจคำสั่ง กรุณาพิมพ์ 'help' เพื่อดูคำสั่งที่ใช้ได้");
-            continue;
-
             // เพิ่มงานผ่านข้อความ (Boss และ Secretary)
             if (msg.startsWith("เพิ่มงาน") || msg.startsWith("นัดหมาย") || msg.startsWith("กำหนดการ")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
@@ -901,6 +895,11 @@ export default {
               await replyText(env, ev.replyToken, summary);
               continue;
             }
+
+            // Default case - ไม่เข้าใจคำสั่ง
+            console.log(`Unhandled message from boss: ${msg}`);
+            await replyText(env, ev.replyToken, "ไม่เข้าใจคำสั่ง กรุณาพิมพ์ 'help' เพื่อดูคำสั่งที่ใช้ได้");
+            continue;
           }
 
           if (ev.type === "postback") {
