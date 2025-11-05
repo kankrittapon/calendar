@@ -5,6 +5,7 @@
 // ENV ที่ใช้: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, SEED_ADMIN_TOKEN, AGENDA_FORMAT=text|flex
 
 import { renderSecretaryPage } from "./indexsecretary.js"; // หน้าเลขา (แยกไฟล์)
+import { verifyLineSignature as verifyLineSignatureSafe } from './lineoa.js';
 
 // CSRF Token validation
 function validateCSRFToken(request, requiredToken) {
