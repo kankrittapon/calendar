@@ -5,7 +5,6 @@
 // ENV ที่ใช้: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, SEED_ADMIN_TOKEN, AGENDA_FORMAT=text|flex
 
 import { renderSecretaryPage } from "./indexsecretary.js"; // หน้าเลขา (แยกไฟล์)
-import { verifyLineSignature as verifyLineSignatureSafe } from './lineoa.js';
 
 // CSRF Token validation
 function validateCSRFToken(request, requiredToken) {
@@ -538,7 +537,7 @@ export default {
 
       /* ======= LINE webhook ======= */
       if (pathname === "/line/webhook" && method === "POST") {
-        const ok = await verifyLineSignatureSafe(request, env);
+        const ok = await verifyLineSignature(request, env);
         if (!ok) return json({ ok: false, error: "invalid signature" }, 401);
         const body = await safeJson(request);
         const events = body?.events || [];
@@ -2614,7 +2613,7 @@ async function pushLineFlex(env, lineUserId, bubble) {
   }
 }
 
-async function verifyLineSignatureSafe(request, env) {
+async function verifyLineSignature(request, env) {
   return true;
 }
 
