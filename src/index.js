@@ -6,6 +6,8 @@
 
 import { renderSecretaryPage } from "./indexsecretary.js"; // หน้าเลขา (แยกไฟล์)
 
+
+
 // CSRF Token validation
 function validateCSRFToken(request, requiredToken) {
   const token = request.headers.get('x-csrf-token') || request.headers.get('csrf-token');
@@ -248,6 +250,8 @@ export default {
           status: 200, headers: { "content-type": "text/html; charset=utf-8" }
         });
       }
+
+
 
       // หน้าทดสอบ
       if (pathname === "/test" && method === "GET") {
@@ -695,6 +699,8 @@ export default {
 
 
 
+
+
             // ตอบสนองตัวเลือกจาก help menu
             if (/^[1-6]$/.test(msg)) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
@@ -910,6 +916,10 @@ export default {
           }
         }
         return json({ ok: true });
+        } catch (error) {
+          console.error('Error in LINE webhook:', error);
+          return json({ ok: false, error: error.message }, 500);
+        }
       }
 
       return json({ ok: false, error: "Not Found" }, 404);
@@ -978,6 +988,7 @@ th,td{padding:8px;text-align:left;border-bottom:1px solid #374151}
 th{background:#1f2937;color:#cbd5e1;font-weight:bold}
 td{background:#0f1422;color:#e5e7eb}
 .status-boss{color:#10b981}
+
 .status-secretary{color:#60a5fa}
 .global-token{background:#1e40af;padding:16px;border-radius:8px;margin-bottom:16px;text-align:center}
 h1{color:#f8fafc;margin-bottom:24px;font-size:24px}
@@ -1054,6 +1065,8 @@ label{display:block;margin:8px 0;color:#94a3b8}
     <button onclick="listSecretaries()">ดูรายชื่อเลขา</button>
     <div id="secretaryList" class="result"></div>
   </div>
+
+
 </div>
 
 <div class="card">
@@ -1081,7 +1094,6 @@ label{display:block;margin:8px 0;color:#94a3b8}
     <label>เลือก Role:<br>
       <select id="roleSelect">
         <option value="boss">Boss (หัวหน้า)</option>
-        <option value="secretary">Secretary (เลขา)</option>
       </select>
     </label>
     <div style="margin-top:12px">
@@ -1092,17 +1104,11 @@ label{display:block;margin:8px 0;color:#94a3b8}
   </div>
 </div>
 
-<div class="card">
-  <h2>ทดสอบส่งข้อความให้เลขา</h2>
-  <label>ข้อความ:<br>
-    <textarea id="secretaryMessage" rows="3">ทดสอบข้อความจากหัวหน้า</textarea>
-  </label>
-  <button onclick="testSendToSecretaries()">ส่งข้อความให้เลขาทุกคน</button>
-  <div id="secretaryMsgResult" class="result"></div>
-</div>
+
 
 <div class="card">
   <h2>ลิงก์อื่นๆ</h2>
+
   <p><a href="/secretary" style="color:#60a5fa">หน้าเลขา</a> - จัดการงาน</p>
   <p><a href="/calendar" style="color:#60a5fa">ปฏิทินสาธารณะ</a> - ดูตารางงาน</p>
   <p><a href="/health" style="color:#60a5fa">Health Check</a> - ตรวจสอบสถานะ</p>
@@ -1225,71 +1231,7 @@ async function setBoss(){
   document.getElementById('bossResult').textContent = JSON.stringify(result, null, 2);
 }
 
-async function addSecretary(){
-  const token = getToken();
-  if(!token) return;
-  const lineUserId = document.getElementById('secretaryUserId').value;
-  const name = document.getElementById('secretaryName').value;
 
-  if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
-
-  const res = await fetch('/admin/secretary/add', {
-    method: 'POST',
-    headers: {
-      'authorization': 'Bearer ' + token,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({ lineUserId, name })
-  });
-
-  const result = await res.json().catch(() => ({}));
-  document.getElementById('secretaryResult').textContent = JSON.stringify(result, null, 2);
-
-  if(res.ok) {
-    document.getElementById('secretaryUserId').value = '';
-    document.getElementById('secretaryName').value = '';
-  }
-}
-
-async function listSecretaries(){
-  const token = getToken();
-  if(!token) return;
-
-  const res = await fetch('/admin/secretaries', {
-    headers: {'authorization': 'Bearer ' + token}
-  });
-
-  const result = await res.json().catch(() => ({}));
-  
-  if(res.ok && result.data) {
-    let html = '<table><tr><th>ชื่อ</th><th>LINE User ID</th><th>วันที่สร้าง</th></tr>';
-    result.data.forEach(secretary => {
-      const date = new Date(secretary.created_at).toLocaleDateString('th-TH');
-      html += '<tr><td>' + escapeHtml(secretary.name) + '</td><td>' + escapeHtml(secretary.line_user_id || '-') + '</td><td>' + date + '</td></tr>';
-    });
-    html += '</table>';
-    document.getElementById('secretaryList').innerHTML = html;
-  } else {
-    document.getElementById('secretaryList').innerHTML = '<div class="result">' + JSON.stringify(result, null, 2) + '</div>';
-  }
-}
-
-async function testSendToSecretaries(){
-  const message = document.getElementById('secretaryMessage').value;
-
-  const res = await fetch('/test/send-to-secretaries', {
-    method: 'POST',
-    headers: {'content-type': 'application/json'},
-    body: JSON.stringify({ message })
-  });
-
-  const result = await res.json().catch(() => ({}));
-  if(result.ok) {
-    document.getElementById('secretaryMsgResult').innerHTML = '<div style="color:#10b981">✅ ส่งข้อความไปเลขา ' + result.secretaryCount + ' คนสำเร็จ</div>';
-  } else {
-    document.getElementById('secretaryMsgResult').innerHTML = '<div style="color:#ef4444">❌ Error: ' + (result.error || 'Unknown error') + '</div>';
-  }
-}
 
 let allUsers = [];
 
@@ -1320,7 +1262,7 @@ async function loadAllUsers(){
       let html = '<table><tr><th>ชื่อ</th><th>Role</th><th>LINE User ID</th><th>วันที่สร้าง</th></tr>';
       result.data.forEach(user => {
         const roleClass = user.role === 'boss' ? 'status-boss' : 'status-secretary';
-        const roleText = user.role === 'boss' ? 'Boss' : 'Secretary';
+        const roleText = 'Boss';
         const lineId = escapeHtml(user.line_user_id || '-');
         const date = new Date(user.created_at).toLocaleDateString('th-TH');
         html += '<tr><td>' + escapeHtml(user.name) + '</td><td class="' + roleClass + '">' + roleText + '</td><td>' + lineId + '</td><td>' + date + '</td></tr>';
@@ -1334,7 +1276,7 @@ async function loadAllUsers(){
       result.data.forEach(user => {
         const option = document.createElement('option');
         option.value = user.id;
-        option.textContent = user.name + ' (' + (user.role === 'boss' ? 'Boss' : 'Secretary') + ')';
+        option.textContent = user.name + ' (Boss)';
         userSelect.appendChild(option);
       });
 
@@ -1474,6 +1416,55 @@ async function deleteUser(){
   if(res.ok) {
     document.getElementById('userSelect').selectedIndex = 0;
     loadAllUsers();
+  }
+}
+
+async function addSecretary(){
+  const token = getToken();
+  if(!token) return;
+  const lineUserId = document.getElementById('secretaryUserId').value;
+  const name = document.getElementById('secretaryName').value;
+
+  if(!lineUserId) return alert('กรุณาใส่ LINE User ID');
+
+  const res = await fetch('/admin/secretary/add', {
+    method: 'POST',
+    headers: {
+      'authorization': 'Bearer ' + token,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ lineUserId, name })
+  });
+
+  const result = await res.json().catch(() => ({}));
+  document.getElementById('secretaryResult').textContent = JSON.stringify(result, null, 2);
+
+  if(res.ok) {
+    document.getElementById('secretaryUserId').value = '';
+    document.getElementById('secretaryName').value = '';
+  }
+}
+
+async function listSecretaries(){
+  const token = getToken();
+  if(!token) return;
+
+  const res = await fetch('/admin/secretaries', {
+    headers: {'authorization': 'Bearer ' + token}
+  });
+
+  const result = await res.json().catch(() => ({}));
+  
+  if(res.ok && result.data) {
+    let html = '<table><tr><th>ชื่อ</th><th>LINE User ID</th><th>วันที่สร้าง</th></tr>';
+    result.data.forEach(secretary => {
+      const date = new Date(secretary.created_at).toLocaleDateString('th-TH');
+      html += '<tr><td>' + escapeHtml(secretary.name) + '</td><td>' + escapeHtml(secretary.line_user_id || '-') + '</td><td>' + date + '</td></tr>';
+    });
+    html += '</table>';
+    document.getElementById('secretaryList').innerHTML = html;
+  } else {
+    document.getElementById('secretaryList').innerHTML = '<div class="result">' + JSON.stringify(result, null, 2) + '</div>';
   }
 }
 </script>
@@ -2076,6 +2067,7 @@ async function seedUsersAndTargets(env) {
   await env.schedule_db.prepare(`
     INSERT OR IGNORE INTO users (id, name, role, api_key, line_user_id, created_at, updated_at)
     VALUES
+
       ('00000000-0000-0000-0000-000000000001', 'เลขานุการ', 'secretary', NULL, NULL, ?, ?),
       ('00000000-0000-0000-0000-000000000002', 'หัวหน้า', 'boss', NULL, NULL, ?, ?)
   `).bind(now, now, now, now).run();
@@ -2118,8 +2110,6 @@ async function setBossUser(env, lineUserId) {
   return true;
 }
 
-
-
 // ===== เพิ่มเลขาใหม่ =====
 async function addSecretary(env, lineUserId, name = "เลขานุการ") {
   const id = crypto.randomUUID();
@@ -2132,6 +2122,10 @@ async function addSecretary(env, lineUserId, name = "เลขานุการ
 
   return id;
 }
+
+
+
+
 
 // ===== จัดการเมื่อมีคนติดตาม =====
 async function handleFollow(env, event) {
