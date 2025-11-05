@@ -550,10 +550,19 @@ export default {
           }
 
           if (ev.type === "message" && ev.message?.type === "text") {
-            const msg = normalize(ev.message.text);
+            const raw = ev.message.text || "";
+            const msg = normalize(raw);
 
             // ตารางนัดหมายวันนี้, งานวันนี้
-            if (msg === "ตารางนัดหมายวันนี้" || msg === "ตารางงาน" || msg === "งานวันนี้" || msg === "ดูตารางงานวันนี้") {
+            if (
+              msg === "ตารางนัดหมายวันนี้" ||
+              msg === "งานวันนี้" ||
+              msg === "ตารางงานวันนี้" ||
+              msg === "งานนี้วันนี้" ||
+              msg === "ดูตารางงานวันนี้" ||
+              /(^|\s)ตารางงานวันนี้(\s|$)/.test(msg) ||
+              /(^|\s)ดูตารางงานวันนี้(\s|$)/.test(msg)
+              ) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
@@ -574,7 +583,15 @@ export default {
             }
 
             // ตารางงานสัปดาห์นี้
-            if (msg === "ตารางงานสัปดาห์นี้" || msg === "งานสัปดาห์นี้") {
+            if (
+              msg === "ตารางงานสัปดาห์นี้" ||
+              msg === "งานสัปดาห์นี้" ||
+              msg === "ตารางงานสัปดาห์นี้" ||
+              msg === "งานสัปดาห์นี้" ||
+              msg === "ดูตารางงานสัปดาห์นี้" ||
+              /(^|\s)ตารางงานสัปดาห์นี้(\s|$)/.test(msg) ||
+              /(^|\s)งานสัปดาห์นี้(\s|$)/.test(msg)
+              ) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
@@ -596,14 +613,21 @@ export default {
               if (items.length === 0) {
                 await replyText(env, ev.replyToken, "สัปดาห์นี้ไม่มีงาน");
               } else {
-                const bubble = buildWeeklyScheduleFlex(startDate, endDate, items);
-                await replyLineFlex(env, ev.replyToken, bubble);
+                await sendCalendarImage(env, ev.replyToken, startDate, endDate, items, "สัปดาห์นี้");
               }
               continue;
             }
 
             // ตารางงานเดือนนี้
-            if (msg === "ตารางงานเดือนนี้" || msg === "งานเดือนนี้") {
+            if (
+              msg === "ตารางงานเดือนนี้" ||
+              msg === "งานเดือนนี้" ||
+              msg === "ตารางงานเดือนนี้" ||
+              msg === "งานเดือนนี้" ||
+              msg === "ดูตารางงานเดือนนี้" ||
+              /(^|\s)ตารางงานเดือนนี้(\s|$)/.test(msg) ||
+              /(^|\s)งานเดือนนี้(\s|$)/.test(msg)
+              ) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
@@ -629,7 +653,12 @@ export default {
             }
 
             // ตารางงานพรุ่งนี้
-            if (msg === "ดูตารางงานพรุ่งนี้" || msg === "งานพรุ่งนี้") {
+            if (
+              msg === "ดูตารางงานพรุ่งนี้" ||
+              msg === "งานพรุ่งนี้" ||
+              msg.includes("ตารางงานพรุ่งนี้") ||
+              /(^|\s)งานพรุ่งนี้(\s|$)/.test(msg)
+              ) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
 
@@ -662,62 +691,18 @@ export default {
               continue;
             }
 
-            // ส่งข้อความให้เลขา
-            if (msg === "ส่งข้อความให้เลขา") {
+            if (msg.startsWith("เลขา:")) {
               const role = await getUserRoleByLineId(env, ev.source?.userId);
               if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-
-              await replyText(env, ev.replyToken, "กรุณาพิมพ์: ผู้ช่วย หรือ เลขา ตามด้วยข้อความ\nตัวอย่าง: ผู้ช่วย กรุณาเตรียมเอกสารประชุม");
-              continue;
-            }
-
-            // ส่งข้อความไปเลขา (ต้องใช้คำสำคัญ "ผู้ช่วย" หรือ "เลขา" เป็น trigger)
-            if (msg.startsWith("ผู้ช่วย ") || msg.startsWith("เลขา ")) {
-              const role = await getUserRoleByLineId(env, ev.source?.userId);
-              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-
-              const message = msg.replace(/^(ผู้ช่วย|เลขา)\s+/, "").trim();
+              const message = msg.slice("เลขา:".length).trim();
               if (!message) {
-                await replyText(env, ev.replyToken, "กรุณาระบุข้อความ เช่น: ผู้ช่วย กรุณาเตรียมเอกสารประชุม");
+                await replyText(env, ev.replyToken, "รูปแบบ: เลขา: ข้อความที่จะส่ง");
                 continue;
-              }
-
-              const sentCount = await sendMessageToAllSecretaries(env, message);
-              await replyText(env, ev.replyToken, `✅ ส่งข้อความไป ${sentCount} คน: ${message}`);
-              continue;
-            }
-
-            // รองรับรูปแบบเดิมด้วยเครื่องหมาย : (สำหรับความเข้ากันได้)
-            if (msg.startsWith("ผู้ช่วย:") || msg.startsWith("เลขา:")) {
-              const role = await getUserRoleByLineId(env, ev.source?.userId);
-              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-
-              const message = msg.replace(/^(ผู้ช่วย|เลขา):/, "").trim();
-              if (!message) {
-                await replyText(env, ev.replyToken, "กรุณาระบุข้อความ เช่น: ผู้ช่วย:กรุณาเตรียมเอกสารประชุม");
+                }
+                const sentCount = await sendMessageToAllSecretaries(env, message);
+                await replyText(env, ev.replyToken, `ส่งถึงเลขาแล้ว ${sentCount} คน`);
                 continue;
-              }
-
-              const sentCount = await sendMessageToAllSecretaries(env, message);
-              await replyText(env, ev.replyToken, `✅ ส่งข้อความไป ${sentCount} คน: ${message}`);
-              continue;
-            }
-
-            // รองรับรูปแบบเดิม "ข้อความ:" (สำหรับความเข้ากันได้)
-            if (msg.startsWith("ข้อความ:")) {
-              const role = await getUserRoleByLineId(env, ev.source?.userId);
-              if (role !== "boss") { await replyText(env, ev.replyToken, "เฉพาะหัวหน้าเท่านั้น"); continue; }
-
-              const message = msg.replace("ข้อความ:", "").trim();
-              if (!message) {
-                await replyText(env, ev.replyToken, "กรุณาระบุข้อความ เช่น: ข้อความ:กรุณาเตรียมเอกสารประชุม");
-                continue;
-              }
-
-              const sentCount = await sendMessageToAllSecretaries(env, message);
-              await replyText(env, ev.replyToken, `✅ ส่งข้อความไป ${sentCount} คน: ${message}`);
-              continue;
-            }
+                }
 
             // ตอบสนองตัวเลือกจาก help menu
             if (/^[1-6]$/.test(msg)) {
